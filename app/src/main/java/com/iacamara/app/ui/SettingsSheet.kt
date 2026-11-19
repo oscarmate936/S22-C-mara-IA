@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Camera
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Equalizer
+import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.GridGoldenratio
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Vibration
@@ -115,6 +116,8 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
 
             Section("SISTEMA")
             Card {
+                ToggleRow(Icons.Rounded.FlashOn, "Flash tipo linterna", "Usa la luz continua del flash. Actívalo si el flash normal no dispara en tu teléfono.", prefs.torchFlash, prefs::updateTorchFlash)
+                Divider()
                 ToggleRow(Icons.Rounded.Vibration, "Respuesta háptica", "Vibración suave en diales, nivel y disparo.", prefs.haptics, prefs::updateHaptics)
             }
 

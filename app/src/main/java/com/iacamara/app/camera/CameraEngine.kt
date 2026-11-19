@@ -141,6 +141,11 @@ class CameraEngine(private val context: Context) {
     var aeAfLocked by mutableStateOf(false)
         private set
     var errorMessage by mutableStateOf<String?>(null)
+    /** Pantalla en blanco como flash para la cámara frontal. */
+    var screenFlash by mutableStateOf(false)
+        private set
+    /** Usar la luz del flash en modo linterna (compatibilidad). */
+    var torchFlash: Boolean = false
 
     // Ajustes manuales (null = automático)
     var manualIso by mutableStateOf<Int?>(null)
@@ -577,7 +582,6 @@ class CameraEngine(private val context: Context) {
             if (!brainActive) {
                 c2.clearCaptureRequestOptions()
                 cam.cameraControl.setExposureCompensationIndex(0)
-                imageCapture?.flashMode = flash.toCameraX()
                 return
             }
             // El cerebro fotógrafo al mando.
@@ -588,12 +592,10 @@ class CameraEngine(private val context: Context) {
                 b.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, priorityIso)
                 b.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, shutter)
                 b.setCaptureRequestOption(CaptureRequest.SENSOR_FRAME_DURATION, maxOf(shutter, 33_333_333L))
-                imageCapture?.flashMode = ImageCapture.FLASH_MODE_OFF
             } else {
                 val lo = ((caps.evValues.firstOrNull() ?: 0f) / caps.evStep).roundToInt()
                 val hi = ((caps.evValues.lastOrNull() ?: 0f) / caps.evStep).roundToInt()
                 cam.cameraControl.setExposureCompensationIndex((brainEv / caps.evStep).roundToInt().coerceIn(lo, hi))
-                imageCapture?.flashMode = flash.toCameraX()
             }
             b.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, brainWb.awbMode)
             c2.setCaptureRequestOptions(b.build())
@@ -608,10 +610,8 @@ class CameraEngine(private val context: Context) {
             b.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, iso)
             b.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, shutter)
             b.setCaptureRequestOption(CaptureRequest.SENSOR_FRAME_DURATION, maxOf(shutter, 33_333_333L))
-            imageCapture?.flashMode = ImageCapture.FLASH_MODE_OFF
         } else {
             cam.cameraControl.setExposureCompensationIndex(evIndex)
-            imageCapture?.flashMode = flash.toCameraX()
         }
         b.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, whiteBalance.awbMode)
         manualFocus?.takeIf { caps.manualFocus }?.let {
@@ -686,7 +686,8 @@ class CameraEngine(private val context: Context) {
             ),
             engagedBefore,
         )
-        val shutter = d.shutterNs.takeIf { caps.manualSensor }
+        val flashReady = flash != FlashSetting.OFF && caps.hasFlash && !useFront
+        val shutter = d.shutterNs.takeIf { caps.manualSensor && !flashReady }
         if (shutter != null && engagedBefore == null && live.shutterNs > 0 && live.iso > 0) {
             // Mantener el mismo brillo al pasar del automático al control del cerebro.
             val iso = (live.iso.toDouble() * live.shutterNs / shutter).toInt()
@@ -696,7 +697,9 @@ class CameraEngine(private val context: Context) {
         brainEv = d.ev
         brainWb = d.wb
         brainShutterNs = shutter
-        brainReasons = d.reasons
+        brainReasons = if (flashReady && d.shutterNs != null) {
+            listOf(Reason("Flash", "la cámara mide la luz junto con el flash")) + d.reasons.filterNot { it.value == ExposureMath.formatShutter(d.shutterNs) }
+        } else d.reasons
         lastLensDecision = d.lensFactor
         if (changed) applyControls()
     }
@@ -817,10 +820,51 @@ class CameraEngine(private val context: Context) {
 
     // ---------------- Captura ----------------
 
+    /** ¿Hace falta flash ahora? En AUTO solo con poca luz. */
+    private fun wantsFlash(): Boolean = when (flash) {
+        FlashSetting.OFF -> false
+        FlashSetting.ON -> true
+        FlashSetting.AUTO -> (stats?.meanLuma ?: 1f) < 0.2f || live.iso >= 1600
+    }
+
+    /**
+     * Dispara. El flash se resuelve aquí según la situación:
+     *  • Exposición automática → flash real del teléfono (con preflash de medición).
+     *  • Exposición manual (PRO o cerebro con velocidad fija) → luz continua medio segundo,
+     *    porque el flash real necesita que la cámara mida la luz por sí misma.
+     *  • Cámara frontal → la pantalla se ilumina en blanco.
+     */
     fun capture(onDone: (Boolean) -> Unit = {}) {
         val ic = imageCapture ?: return
+        val cam = camera ?: return
         if (isCapturing) return
         isCapturing = true
+        val flashNow = wantsFlash()
+        ic.flashMode = ImageCapture.FLASH_MODE_OFF
+        when {
+            !flashNow -> takePicture(ic, onDone)
+            useFront -> {
+                screenFlash = true
+                mainHandler.postDelayed({ takePicture(ic) { ok -> screenFlash = false; onDone(ok) } }, 600)
+            }
+            !caps.hasFlash -> {
+                errorMessage = "Este lente no tiene flash · usa 1×"
+                takePicture(ic, onDone)
+            }
+            sensorManual || torchFlash -> {
+                cam.cameraControl.enableTorch(true)
+                mainHandler.postDelayed({
+                    takePicture(ic) { ok -> cam.cameraControl.enableTorch(false); onDone(ok) }
+                }, 500)
+            }
+            else -> {
+                ic.flashMode = ImageCapture.FLASH_MODE_ON
+                takePicture(ic, onDone)
+            }
+        }
+    }
+
+    private fun takePicture(ic: ImageCapture, onDone: (Boolean) -> Unit) {
         val name = "IACAM_" + SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(System.currentTimeMillis())
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
@@ -853,14 +897,11 @@ class CameraEngine(private val context: Context) {
         })
     }
 
-    private fun FlashSetting.toCameraX() = when (this) {
-        FlashSetting.OFF -> ImageCapture.FLASH_MODE_OFF
-        FlashSetting.AUTO -> ImageCapture.FLASH_MODE_AUTO
-        FlashSetting.ON -> ImageCapture.FLASH_MODE_ON
-    }
-
     fun cycleFlash() {
         flash = FlashSetting.entries[(flash.ordinal + 1) % FlashSetting.entries.size]
+        if (flash != FlashSetting.OFF && !caps.hasFlash && !useFront) errorMessage = "Este lente no tiene flash · usa 1×"
+        // Con flash, el cerebro deja que la cámara mida la luz (necesario para el flash real).
+        if (brainActive) { lastBrainRun = 0L; brainShutterNs = null }
         applyControls()
     }
 

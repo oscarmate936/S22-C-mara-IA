@@ -168,6 +168,7 @@ fun CameraScreen(
         engine.autoBrain = prefs.autoBrain
         engine.autoLens = prefs.autoLens
     }
+    LaunchedEffect(prefs.torchFlash) { engine.torchFlash = prefs.torchFlash }
     LaunchedEffect(Unit) {
         snapshotFlow { sensors.shake to sensors.steady }.collect { (s, st) -> engine.updateMotion(s, st) }
     }
@@ -390,6 +391,9 @@ fun CameraScreen(
             }
         }
 
+        // Flash de pantalla (cámara frontal)
+        if (engine.screenFlash) Box(Modifier.fillMaxSize().background(Color(0xFFFFF6E8)))
+
         if (showSettings) SettingsSheet(prefs) { showSettings = false }
         val sceneNow = engine.scene
         if (showScene && sceneNow != null) {
@@ -415,7 +419,15 @@ private fun TopBar(engine: CameraEngine, prefs: Prefs, rotation: Int, onSettings
             FlashSetting.AUTO -> Icons.Rounded.FlashAuto
             FlashSetting.ON -> Icons.Rounded.FlashOn
         }
-        BarIconButton(flashIcon, "Flash", active = engine.flash != FlashSetting.OFF, rotation = rotation) { engine.cycleFlash() }
+        val flashAvailable = engine.caps.hasFlash || engine.useFront
+        BarIconButton(
+            flashIcon, "Flash", active = engine.flash != FlashSetting.OFF, rotation = rotation,
+            tint = when {
+                engine.flash == FlashSetting.OFF -> Palette.Paper
+                !flashAvailable -> Palette.Fog
+                else -> Palette.Amber
+            },
+        ) { engine.cycleFlash() }
         val timerIcon = when (prefs.timerSeconds) { 3 -> Icons.Rounded.Timer3; 10 -> Icons.Rounded.Timer10; else -> Icons.Rounded.TimerOff }
         BarIconButton(timerIcon, "Temporizador", active = prefs.timerSeconds > 0, rotation = rotation) { prefs.cycleTimer() }
         BarTextButton(engine.aspect.label, rotation) {
