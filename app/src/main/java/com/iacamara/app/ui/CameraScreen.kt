@@ -46,6 +46,8 @@ import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.DirectionsRun
 import androidx.compose.material.icons.rounded.Portrait
+import androidx.compose.material.icons.rounded.Stars
+import androidx.compose.material.icons.rounded.Waves
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -348,6 +350,9 @@ fun CameraScreen(
                                 BurstKind.HDR -> null // el cerebro ya lo explica
                                 BurstKind.MOMENT -> Reason("$n tomas", "elijo la más nítida, con ojos abiertos")
                                 BurstKind.PORTRAIT -> Reason("Retrato", "fondo desenfocado como un lente luminoso")
+                                BurstKind.SUPERRES -> Reason("$n tomas", "súper resolución: más detalle con zoom")
+                                BurstKind.LONG -> Reason("$n tomas", "exposición larga")
+                                BurstKind.ASTRO -> Reason("Astro", "trípode: estrellas nítidas, ~30 s")
                             }
                         }
                         BrainReasons(listOfNotNull(shotReason) + engine.brainReasons.take(if (shotReason != null) 2 else 3))
@@ -543,6 +548,8 @@ private fun TopBar(engine: CameraEngine, prefs: Prefs, rotation: Int, onSettings
             ShotSetting.ACTION -> Icons.Rounded.DirectionsRun
             ShotSetting.PORTRAIT -> Icons.Rounded.Portrait
             ShotSetting.NIGHT -> Icons.Rounded.NightsStay
+            ShotSetting.LONG -> Icons.Rounded.Waves
+            ShotSetting.ASTRO -> Icons.Rounded.Stars
             ShotSetting.HDR -> Icons.Rounded.HdrOn
             ShotSetting.MACRO -> Icons.Rounded.Layers
         }

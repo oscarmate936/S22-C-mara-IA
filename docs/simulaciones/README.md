@@ -24,4 +24,8 @@ Fotos de prueba (dominio público / CC0, de scikit-image): astronauta (NASA), ga
 | `cmp_noche_v1_v2.png` | Modo noche con giro de la mano: v1 (izq.) vs. v2 con alineación por zonas (der.) |
 | `cmp_momento_cara.png` | Foto de grupo: zona dañada (izq.) corregida con la cara de otra toma alineada (der.), sin unión visible |
 | `cmp_retrato.png` | Modo retrato: original vs. fondo desenfocado (luces convertidas en discos, sujeto intacto, sin halos) |
+| `cmp_superres_1_vs_8.png` | Zoom digital 2×: una toma (izq.) vs. súper resolución con 8 tomas (der.) |
+| `cmp_noche_v2_tono_local.png` | Noche v2: escena oscura con ventana iluminada (izq.) y tono local (der.): sombras +1.8 pasos, ventana sin quemar, sin halo |
+| `cmp_exposicion_larga.png` | Exposición larga: una toma (izq.) vs. 10 tomas (der.): agua de seda y estela del faro continua |
+| `cmp_astro.png` | Astro: una toma (izq.) vs. 10 tomas alineadas a las estrellas (der.): estrellas puntuales, cielo limpio, sin píxeles calientes |
 | `reporte.txt` | Métricas (PSNR, alineación, fotómetro, escenas) |

@@ -111,7 +111,7 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
 
             Section("CALIDAD DE IMAGEN")
             Card {
-                ToggleRow(Icons.Rounded.AutoAwesomeMotion, "Tomas múltiples automáticas", "Con poca luz combina hasta 8 fotos (menos ruido), en macro varias distancias de enfoque (todo nítido) y con mascotas, movimiento o grupos elige el mejor momento (nítido y con ojos abiertos).", prefs.multiShot, prefs::updateMultiShot)
+                ToggleRow(Icons.Rounded.AutoAwesomeMotion, "Tomas múltiples automáticas", "Con poca luz combina hasta 8 fotos (menos ruido) y aclara las sombras por zonas; con el teléfono apoyado de noche hace astrofotografía; con zoom digital, súper resolución; en macro varias distancias de enfoque y con mascotas, movimiento o grupos elige el mejor momento.", prefs.multiShot, prefs::updateMultiShot)
                 Divider()
                 ToggleRow(Icons.Rounded.Portrait, "Retrato automático", "En modo IA, cuando hay una persona cerca, recorta al sujeto y desenfoca el fondo. Desde la galería de la app puedes cambiar el desenfoque o quitarlo.", prefs.autoPortrait, prefs::updateAutoPortrait)
                 Divider()
@@ -160,7 +160,7 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text("IA Cámara ${BuildConfigInfo.VERSION}", style = Type.BodyStrong, color = Palette.Paper)
-                        Text("Fase 7 · Modo retrato", style = Type.Body, color = Palette.Mist)
+                        Text("Fase 8 · Noche, astro y súper resolución", style = Type.Body, color = Palette.Mist)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -171,7 +171,8 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                 Roadmap("5", "Alineación v2 y memoria de fotogramas", done = true)
                 Roadmap("6", "Momento perfecto y disparo automático", done = true)
                 Roadmap("7", "Modo retrato y visor de fotos", done = true)
-                Roadmap("8", "Súper resolución, noche v2 y astrofotografía", done = false)
+                Roadmap("8", "Súper resolución, noche v2, exposición larga y astro", done = true)
+                Roadmap("9", "Ajustes por zonas, enderezado y calificación", done = false)
             }
         }
     }

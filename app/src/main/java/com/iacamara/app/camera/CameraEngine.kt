@@ -71,7 +71,7 @@ enum class Param { ISO, SHUTTER, WB, FOCUS, EV }
 enum class FlashSetting { OFF, AUTO, ON }
 
 /** Cómo se toma la foto. AUTO = lo decide la IA. */
-enum class ShotSetting(val label: String) { AUTO("Auto"), SINGLE("1 toma"), ACTION("Acción"), PORTRAIT("Retrato"), NIGHT("Noche"), HDR("HDR"), MACRO("Macro+") }
+enum class ShotSetting(val label: String) { AUTO("Auto"), SINGLE("1 toma"), ACTION("Acción"), PORTRAIT("Retrato"), NIGHT("Noche"), LONG("Larga"), ASTRO("Astro"), HDR("HDR"), MACRO("Macro+") }
 enum class AspectSetting(val label: String) { RATIO_4_3("4:3"), RATIO_16_9("16:9") }
 
 /**
@@ -268,6 +268,9 @@ class CameraEngine(private val context: Context) {
     private val processingExecutor = Executors.newSingleThreadExecutor()
     /** Enfoque temporal durante un apilado de enfoque. */
     private var burstFocus: Float? = null
+    /** Tipo de ráfaga en curso (para poder terminar antes astro y exposición larga). */
+    private var burstKindNow: BurstKind? = null
+    private var burstStopRequested = false
     /** Exposición y blancos bloqueados durante una ráfaga (todas las tomas iguales). */
     private var burstLock = false
     /** Un cambio de lente/formato pedido durante una captura se aplica al terminar. */
@@ -709,6 +712,13 @@ class CameraEngine(private val context: Context) {
                     .setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, shutter)
                     .setCaptureRequestOption(CaptureRequest.SENSOR_FRAME_DURATION, maxOf(shutter, 33_333_333L))
                     .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK, true)
+                    .also { o ->
+                        // Astro: enfoque fijo al infinito (las estrellas).
+                        burstFocus?.takeIf { caps.manualFocus }?.let {
+                            o.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
+                            o.setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, it)
+                        }
+                    }
                     .build(),
             )
             return
@@ -1092,7 +1102,14 @@ class CameraEngine(private val context: Context) {
     fun capture(onDone: (Boolean) -> Unit = {}) {
         val ic = imageCapture ?: return
         val cam = camera ?: return
-        if (isCapturing) return
+        if (isCapturing) {
+            // Astro y exposición larga: tocar otra vez termina antes (con lo que ya se tomó).
+            if (burstKindNow == BurstKind.ASTRO || burstKindNow == BurstKind.LONG) {
+                burstStopRequested = true
+                burstStatus = "Terminando…"
+            }
+            return
+        }
         isCapturing = true
         val flashNow = wantsFlash()
         ic.flashMode = ImageCapture.FLASH_MODE_OFF
@@ -1135,6 +1152,8 @@ class CameraEngine(private val context: Context) {
             ShotSetting.SINGLE -> null
             ShotSetting.ACTION -> BurstKind.MOMENT
             ShotSetting.PORTRAIT -> BurstKind.PORTRAIT
+            ShotSetting.LONG -> BurstKind.LONG
+            ShotSetting.ASTRO -> if (caps.manualSensor) BurstKind.ASTRO else BurstKind.NIGHT
             ShotSetting.NIGHT -> BurstKind.NIGHT
             ShotSetting.HDR -> if (caps.manualSensor) BurstKind.HDR else null
             ShotSetting.MACRO -> if (caps.manualFocus) BurstKind.MACRO else null
@@ -1144,8 +1163,11 @@ class CameraEngine(private val context: Context) {
                     val st = stats
                     val sc = scene?.scene
                     val dark = live.iso >= 1250 || (st != null && st.meanLuma < 0.22f && live.iso >= 640)
+                    // Cielo nocturno con el teléfono apoyado: astrofotografía.
+                    val veryDark = live.iso >= 3200 && (st == null || st.meanLuma < 0.12f)
                     when {
                         sc == Scene.MACRO && caps.manualFocus && live.focusDiopters > 5f -> BurstKind.MACRO
+                        steady && veryDark && caps.manualSensor && !useFront -> BurstKind.ASTRO
                         sc == Scene.NIGHT || dark -> BurstKind.NIGHT
                         brainWantsHdr -> BurstKind.HDR
                         // Una persona cerca (rostro de tamaño de retrato): fondo desenfocado.
@@ -1153,6 +1175,8 @@ class CameraEngine(private val context: Context) {
                             (subject?.box?.width() ?: 0f) >= PORTRAIT_FACE_WIDTH -> BurstKind.PORTRAIT
                         // Mascotas, animales o algo moviéndose, y fotos de grupo (parpadeos): el mejor momento.
                         sc == Scene.PET || sc == Scene.ANIMAL || subjectSpeed > 0.15f || faceCount >= 2 -> BurstKind.MOMENT
+                        // Zoom digital: varias tomas con el pulso de la mano = más detalle.
+                        zoomRatio >= SUPERRES_MIN_ZOOM -> BurstKind.SUPERRES
                         else -> null
                     }
                 }
@@ -1164,9 +1188,17 @@ class CameraEngine(private val context: Context) {
             BurstKind.HDR -> 3
             BurstKind.MOMENT -> 4
             BurstKind.PORTRAIT -> 1
+            BurstKind.SUPERRES -> 6
+            BurstKind.LONG -> 10
+            BurstKind.ASTRO -> astroPlan().third
         }
         return kind to n
     }
+
+    /** Astro: duración de cada toma, ISO y número de tomas según el sensor. */
+    private fun astroPlan() = com.iacamara.app.processing.Astro.plan(
+        caps.shutterValues.lastOrNull() ?: 1_000_000_000L, caps.isoValues.lastOrNull() ?: 3200,
+    )
 
     /** Explicación corta de la toma múltiple para la interfaz. */
     fun burstLabel(): String? = burstPlan()?.let { (k, n) ->
@@ -1176,6 +1208,9 @@ class CameraEngine(private val context: Context) {
             BurstKind.HDR -> "HDR · $n TOMAS"
             BurstKind.MOMENT -> if (frameRingEnabled) "ACCIÓN · MEJOR MOMENTO" else "MEJOR MOMENTO · $n TOMAS"
             BurstKind.PORTRAIT -> "RETRATO · FONDO DESENFOCADO"
+            BurstKind.SUPERRES -> "SÚPER RESOLUCIÓN · $n TOMAS"
+            BurstKind.LONG -> "EXPOSICIÓN LARGA · $n TOMAS"
+            BurstKind.ASTRO -> "ASTRO · ~${(astroPlan().first * n / 1_000_000_000L)} s · TRÍPODE"
         }
     }
 
@@ -1207,8 +1242,31 @@ class CameraEngine(private val context: Context) {
             val rest = hdrRatio * minShutter / baseShutter.toFloat()
             (baseIso / rest).toInt().coerceAtLeast(minIso) to minShutter
         }
+        // Exposición larga: cada toma lo más lenta posible (hasta 1/4 s) con la misma luz total,
+        // para que las estelas queden continuas. Astro: tomas de varios segundos al infinito.
+        val maxShutter = caps.shutterValues.lastOrNull() ?: 250_000_000L
+        val slowExposure: Pair<Int, Long>? = when (kind) {
+            BurstKind.LONG -> if (!caps.manualSensor) null else {
+                val target = minOf(250_000_000L, maxShutter)
+                val iso = (baseIso * baseShutter.toDouble() / target).toInt()
+                if (iso >= minIso) iso to target
+                else minIso to (baseIso * baseShutter.toDouble() / minIso).toLong().coerceIn(minShutter, target)
+            }
+            BurstKind.ASTRO -> astroPlan().let { (s, iso, _) -> iso to s }
+            else -> null
+        }
+        burstKindNow = kind
+        burstStopRequested = false
+        slowExposure?.let {
+            burstExposure = it
+            if (kind == BurstKind.ASTRO && caps.manualFocus) burstFocus = 0f
+            applyControls()
+        }
+        val digitalZoom = zoomRatio
 
         fun finish(ok: Boolean) {
+            burstKindNow = null
+            burstStopRequested = false
             burstFocus = null
             burstExposure = null
             burstLock = false
@@ -1226,7 +1284,7 @@ class CameraEngine(private val context: Context) {
             burstStatus = when (kind) {
                 BurstKind.MOMENT -> "Eligiendo el mejor momento…"
                 BurstKind.PORTRAIT -> "Recortando al sujeto…"
-                else -> "Combinando $n tomas…"
+                else -> "Combinando ${frames.size} tomas…"
             }
             if (kind == BurstKind.PORTRAIT) {
                 processingExecutor.execute {
@@ -1274,6 +1332,7 @@ class CameraEngine(private val context: Context) {
                         frames, kind, rotation,
                         shadowLift = if (kind == BurstKind.NIGHT) 0.3f else 0f,
                         hdrRatio = hdrRatio,
+                        digitalZoom = digitalZoom,
                     ) { done, total -> mainHandler.post { burstStatus = "Combinando $done/$total…" } }
                 }.onFailure { Log.e(TAG, "Fallo al combinar", it) }.getOrNull()
                 val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
@@ -1289,7 +1348,15 @@ class CameraEngine(private val context: Context) {
         }
 
         fun shoot(i: Int) {
-            burstStatus = if (kind == BurstKind.MACRO) "Enfoque ${i + 1}/$n · no te muevas" else "Tomando ${i + 1}/$n · no te muevas"
+            burstStatus = when (kind) {
+                BurstKind.MACRO -> "Enfoque ${i + 1}/$n · no te muevas"
+                BurstKind.ASTRO -> {
+                    val left = (slowExposure?.second ?: 0L) * (n - i) / 1_000_000_000L
+                    "Astro ${i + 1}/$n · no muevas el teléfono · ~$left s · toca para terminar"
+                }
+                BurstKind.LONG -> "Exposición larga ${i + 1}/$n · toca para terminar"
+                else -> "Tomando ${i + 1}/$n · no te muevas"
+            }
             val go = {
                 ic.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
                     override fun onCaptureSuccess(image: androidx.camera.core.ImageProxy) {
@@ -1298,7 +1365,7 @@ class CameraEngine(private val context: Context) {
                         val bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
                         image.close()
                         frames += bytes
-                        if (i + 1 < n) shoot(i + 1) else process()
+                        if (i + 1 < n && !(burstStopRequested && frames.size >= 2)) shoot(i + 1) else process()
                     }
 
                     override fun onError(e: ImageCaptureException) {
@@ -1315,6 +1382,8 @@ class CameraEngine(private val context: Context) {
                 burstExposure = underExposure
                 applyControls()
                 mainHandler.postDelayed({ go() }, 350) // unos fotogramas para que el sensor cambie
+            } else if (i == 0 && slowExposure != null) {
+                mainHandler.postDelayed({ go() }, 400 + slowExposure.second / 1_000_000L) // que el sensor aplique la exposición
             } else go()
         }
         shoot(0)
@@ -1407,6 +1476,8 @@ class CameraEngine(private val context: Context) {
     companion object {
         /** Fotogramas que guarda la memoria (~0.5 s a 15–30 fps). */
         /** Ancho mínimo del rostro (fracción del encuadre) para hacer retrato automático. */
+        /** Zoom digital a partir del cual se usa súper resolución (varias tomas). */
+        const val SUPERRES_MIN_ZOOM = 1.6f
         const val PORTRAIT_FACE_WIDTH = 0.12f
         const val RING_FRAMES = 10
         private const val TAG = "IACamara"

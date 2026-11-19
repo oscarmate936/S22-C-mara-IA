@@ -124,6 +124,9 @@ object Gallery {
         "_HDR" in name -> "HDR"
         "_MACRO" in name -> "MACRO+"
         "_MOMENTO" in name -> "MEJOR MOMENTO"
+        "_SUPERRES" in name -> "SÚPER RES"
+        "_LARGA" in name -> "EXPOSICIÓN LARGA"
+        "_ASTRO" in name -> "ASTRO"
         else -> null
     }
 

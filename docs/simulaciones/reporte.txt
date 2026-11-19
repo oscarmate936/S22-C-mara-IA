@@ -103,3 +103,13 @@ BORDES  error en el contorno: máscara tosca 0.234 → refinada 0.045
 SUJETO  nitidez del sujeto 99 dB (intacto) · fondo: nitidez 22.8 → 1.1
 HALOS   diferencia junto al borde frente al fondo ideal: 0.0 niveles (de 255)
 BOKEH   luz puntual: centro 91, mitad del radio 89, fuera del disco 46
+=== SÚPER RESOLUCIÓN (zoom digital 2×) ===
+SUPER   1 toma: 29.7 dB (con su mejor enfoque 30.9 dB) · 8 tomas súper resolución: 32.6 dB (enfoque 1.90)
+=== NOCHE v2 · tono local ===
+NOCHE2  zonas oscuras +1.8 pasos · ventana +0.09 pasos (no se quema) · textura conservada 99 % · halo: aclarado junto a la ventana 98 % del de lejos
+=== EXPOSICIÓN LARGA ===
+LARGA   estela continua en el 100 % del recorrido · agua: textura 16.5 → 4.1 (seda) · fondo nítido (84 % de la nitidez de una toma)
+=== ASTROFOTOGRAFÍA ===
+ASTRO   horizonte: error 3 px · 9 de 9 tomas alineadas con las estrellas · píxeles calientes eliminados (0 restantes de 30)
+ASTRO   estrellas: brillo 120 (1 toma 121, sumar sin alinear 97 = estelas) · ruido del cielo 4.7 → 1.1
+TIEMPOS 3000×2250: tono local 288 ms · exposición larga (3 tomas) 523 ms · enfoque 160 ms

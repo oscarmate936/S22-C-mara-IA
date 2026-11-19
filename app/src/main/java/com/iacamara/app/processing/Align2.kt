@@ -323,6 +323,12 @@ class RobustMerger(private val w: Int, private val h: Int, frames: Int) {
         count++
     }
 
+    /** La mezcla sin redondear (sRGB con decimales): para el mapeo de tonos local de noche v2. */
+    fun source(): RgbSource = RgbSource { i, o ->
+        val s = (ws[i].toInt() and 0xFF).coerceAtLeast(1).toFloat()
+        o[0] = (r[i].toInt() and 0xFFFF) / s; o[1] = (g[i].toInt() and 0xFFFF) / s; o[2] = (b[i].toInt() and 0xFFFF) / s
+    }
+
     fun result(shadowLift: Float = 0f): IntArray {
         val lut = IntArray(256) { v ->
             val f = v / 255f

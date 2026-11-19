@@ -39,6 +39,10 @@ Cada cambio que se sube al repositorio vuelve a compilar el APK automáticamente
 | **Tomas múltiples** (fase 4) | **Noche:** combina 6–8 fotos alineadas; el ruido baja ~√N sin el aspecto "pintado" de los filtros, descarta lo que se mueve entre tomas y aclara suavemente las sombras. **Macro+:** 5 fotos a distintas distancias de enfoque que se combinan quedándose con lo más nítido de cada una. En modo IA se eligen solas según la luz y la escena. También se pueden elegir con el botón de tipo de toma en la barra superior (Auto, 1 toma, Noche, Macro+). |
 | **Modo retrato** (fase 7) | La IA **recorta al sujeto** (persona, mascota u objeto), ajusta el borde a la foto (pelo, orejas) y **desenfoca el fondo como un lente luminoso**: más desenfoque cuanto más lejos, el suelo delante de los pies más nítido, las luces se vuelven **círculos de bokeh** y sin halos alrededor del sujeto. En modo IA se activa solo con una persona cerca; también se elige con el botón de tipo de toma (**Retrato**). |
 | **Visor de fotos** (fase 7) | Al tocar la miniatura se abre la galería de la app: deslizar entre fotos, doble toque para ampliar, cuadrícula, etiqueta de lo que hizo la IA (Retrato, Noche, HDR, Macro+, Mejor momento), compartir, editar y borrar. En los retratos, un control **f/1.2 – f/16** cambia el desenfoque o lo quita del todo (se vuelve a la foto original). |
+| **Noche v2** (fase 8) | Tono **local**: aclara las zonas oscuras según la luz de cada zona (no con una curva para toda la foto), contiene las luces fuertes y conserva la textura, sin halos alrededor de farolas o ventanas. Con zoom digital, además, enfoca más. |
+| **Súper resolución** (fase 8) | Con zoom digital (2×, 10× o pellizcando) toma 6 fotos: el pulso de la mano las desplaza fracciones de píxel; se alinean, se combinan y se enfoca más que una sola toma (+1.7 dB de detalle medido). Automático en modo IA. |
+| **Exposición larga** (fase 8) | Botón de tipo de toma → **Larga**: 10 tomas alineadas y promediadas en luz lineal. El agua se vuelve seda, la gente que pasa desaparece y los faros dejan **estelas continuas**. Toca el disparador para terminar antes. |
+| **Astrofotografía** (fase 8) | Con el teléfono apoyado de noche (o con **Astro**): ~30 s de tomas de varios segundos con enfoque al infinito. El cielo se alinea con las **estrellas** (giro de la Tierra), el paisaje se combina fijo, se eliminan los píxeles calientes y se oscurece el fondo del cielo. Toca el disparador para terminar antes. |
 | **RAW (DNG)** | Guarda el archivo en bruto del sensor junto al JPG, si el lente lo permite (se activa en Ajustes). |
 
 Las fotos se guardan en **Imágenes › IA Camara**.
@@ -62,7 +66,7 @@ Paleta negro tinta con paneles de vidrio. El ámbar marca la acción y los valor
 5. ✅ Base de fotografía computacional: alineación v2 (por zonas, giro y subpíxel), mezcla robusta y memoria de fotogramas
 6. ✅ El momento perfecto: modo Acción (sin retardo + instantes previos), mejor toma (nítida, ojos abiertos, sonrisa), corrección de parpadeos en grupo y disparo automático por sonrisa, mirada o mano levantada
 7. ✅ Modo retrato (recorte con IA, borde refinado, profundidad aproximada y bokeh óptico) y visor de fotos con desenfoque ajustable
-8. ⏳ Súper resolución, modo noche v2, exposición larga simulada y astrofotografía
+8. ✅ Súper resolución, modo noche v2 (tono local), exposición larga simulada y astrofotografía
 9. ⏳ Ajustes por zonas, enderezado automático, calificación de la foto y aprender tu gusto
 
 ## Desarrollo
