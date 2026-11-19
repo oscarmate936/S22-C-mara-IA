@@ -12,8 +12,8 @@ android {
         applicationId = "com.iacamara.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.12.1"
+        versionCode = 22
+        versionName = "0.13.0"
         // Solo procesadores ARM de 64 bits (todos los Galaxy modernos, incluido el S22+): APK mucho más liviano.
         ndk { abiFilters += "arm64-v8a" }
     }

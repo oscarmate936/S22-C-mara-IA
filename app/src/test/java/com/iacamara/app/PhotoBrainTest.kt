@@ -66,7 +66,12 @@ class PhotoBrainTest {
         val b = PhotoBrain()
         var d = b.decide(input(Scene.SUNSET), null)
         repeat(4) { d = b.decide(input(Scene.SUNSET), null) }
-        assertEquals(-0.7f, d.ev, 0.05f)
+        // Calibrado con 31 atardeceres editados por profesionales (FiveK): −0.4 EV de base…
+        assertEquals(-0.4f, d.ev, 0.1f) // (zona muerta de 0.15 EV para no hacer temblar la imagen)
+        // …y más si el resplandor pasa del nivel en que ellos dejan las luces.
+        var bright = b.decide(input(Scene.SUNSET, p98 = 0.97f), null)
+        repeat(6) { bright = b.decide(input(Scene.SUNSET, p98 = 0.97f), null) }
+        assertTrue("ev ${bright.ev}", bright.ev < -0.6f)
         assertEquals(WhiteBalance.DAYLIGHT, d.wb)
     }
 
@@ -112,7 +117,8 @@ class PhotoBrainTest {
         val b = PhotoBrain()
         var d = b.decide(input(Scene.GENERAL, clipped = 0.04f, clippedArea = 0.01f), null)
         repeat(5) { d = b.decide(input(Scene.GENERAL, clipped = 0.04f, clippedArea = 0.01f), null) }
-        assertEquals(0f, d.ev, 0.05f)
+        // No baja más allá de la exposición calibrada de la escena.
+        assertEquals(com.iacamara.app.processing.Calibration.SCENE_EV["GENERAL"] ?: 0f, d.ev, 0.05f)
     }
 
     @Test fun laNieveSaleBlanca() {

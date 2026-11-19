@@ -264,7 +264,8 @@ class IaClosedLoopTest {
         val v1Ev = if (clipped > 0.02f) -(0.3f + ((clipped - 0.02f) * 15f).coerceAtMost(0.7f)) else 0f
         line("LÁMPARA    quemado: %.1f%% de píxeles pero %.1f%% del encuadre en zonas grandes → IA v2 %+.1f EV (IA v1 habría hecho %+.1f EV y oscurecido la habitación)".format(
             clipped * 100, l1.stats.clippedArea * 100, l1.ev, v1Ev))
-        assertTrue(abs(l1.ev) < 0.2f)
+        // La lámpara no oscurece más allá de la exposición calibrada de la escena (FiveK).
+        assertTrue(abs(l1.ev - (com.iacamara.app.processing.Calibration.SCENE_EV["GENERAL"] ?: 0f)) < 0.2f)
 
         // 4) Paisaje con el cielo mucho más brillante que el suelo: proteger el cielo.
         val skyScene = loadRadiance("rocket.jpg") { _, y, _ -> if (y < 0.55f) 5f else 1f }

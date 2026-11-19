@@ -108,11 +108,12 @@ def category(m):
     return "GENERAL"
 
 
-def main(folder, out):
+def main(folder, out, max_shard=99):
     meta = {}
     for f in glob.glob(os.path.join(folder, "*_meta.json")):
         for m in json.load(open(f)):
-            meta[m["id"]] = m
+            if int(m["id"][1:6]) < max_shard:  # los bloques siguientes se reservan para validar
+                meta[m["id"]] = m
     rows = []
     for rid, m in sorted(meta.items()):
         pi, pe = os.path.join(folder, rid + "_in.png"), os.path.join(folder, rid + "_exp.png")
@@ -170,8 +171,8 @@ def main(folder, out):
     json.dump(res, open(out, "w"), indent=1)
 
 
-if __name__ == "__main__" and len(sys.argv) == 3:
-    main(sys.argv[1], sys.argv[2])
+if __name__ == "__main__" and len(sys.argv) >= 3:
+    main(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 99)
 
 
 def kotlin_constants(res_path):

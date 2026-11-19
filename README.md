@@ -50,6 +50,12 @@ Cada cambio que se sube al repositorio vuelve a compilar el APK automáticamente
 
 Las fotos se guardan en **Imágenes › IA Camara**.
 
+## Calibración profesional y exclusiva del Galaxy S22+ (v0.13)
+
+- **Solo para el S22+:** la app conoce sus cuatro cámaras (ultra gran angular 13 mm f/2.2 de foco fijo, principal 23 mm f/1.8 con OIS, tele 70 mm f/2.4 con OIS y frontal). Velocidad mínima a pulso según el estabilizador de cada lente; con poca luz, recorte 3× del principal en lugar del tele (más luz, menos ruido); en otro teléfono avisa antes de abrir.
+- **Calibrada con fotos reales** (FiveK, KonIQ-10k, ADE20K): exposición por escena y altas luces como las dejan los profesionales, color sin saturar, nota de la foto ajustada a la opinión de las personas y máscaras de cielo casi el doble de precisas. Detalles y cifras en [docs/calibracion](docs/calibracion/README.md).
+- **Perfil natural** (activado por defecto): curva de tono que no quema el cielo, menos nitidez artificial y color al nivel de un profesional.
+
 ## Diseño
 
 Es un diseño propio, inspirado en principios de apps profesionales:

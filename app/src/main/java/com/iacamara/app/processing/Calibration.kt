@@ -17,18 +17,53 @@ object Calibration {
         warmMinL = 1.3796f, skyMaxTexture = 0.02198f, floodStep = 0.1482f, greenRatio = 1.0039f, greenMinSat = 0.1898f,
     )
 
-    /** Exposición por escena (pasos EV), provisional hasta la calibración completa. */
-    val SCENE_EV: Map<String, Float> = emptyMap()
-
-    /** Hasta dónde llegan las altas luces (percentil 98, codificado 0..1) por escena, provisional. */
-    val HIGHLIGHT_CEIL: Map<String, Float> = emptyMap()
+    /**
+     * Límite de color (croma CIELAB) por escena, de 606 fotos editadas por profesionales (FiveK,
+     * experto C): la rodilla es el croma del 95 % de los píxeles en una foto típica; el techo, el de las
+     * fotos más coloridas (percentil 90) con un pequeño margen.
+     */
+    val CHROMA: Map<String, NaturalProfile.Limits> = mapOf(
+        "CITY" to NaturalProfile.Limits(27.4f, 49.5f), // n=157
+        "GENERAL" to NaturalProfile.Limits(24.8f, 48.4f), // n=72
+        "INDOOR" to NaturalProfile.Limits(24.8f, 47.5f), // n=135
+        "LANDSCAPE" to NaturalProfile.Limits(35.4f, 63.8f), // n=117
+        "NIGHT" to NaturalProfile.Limits(32.1f, 53.3f), // n=13
+        "PORTRAIT" to NaturalProfile.Limits(29.4f, 48.3f), // n=81
+        "SUNSET" to NaturalProfile.Limits(26.6f, 46.2f), // n=31
+        "ALL" to NaturalProfile.Limits(27.8f, 51.8f), // n=606
+    )
 
     /**
-     * Curva de tono natural (entrada lineal del sensor → salida codificada), provisional.
-     * Pares (entrada, salida) para Camera2.
+     * Exposición por escena (pasos EV respecto al automático), mediana de lo que hicieron los
+     * profesionales en FiveK. El retrato se deja en 0: la luz se mide sobre la cara.
      */
-    val TONE_IN = floatArrayOf(0f, 1f)
-    val TONE_OUT = floatArrayOf(0f, 1f)
+    val SCENE_EV: Map<String, Float> = mapOf(
+        "SUNSET" to -0.4f,
+        "LANDSCAPE" to -0.5f,
+        "NIGHT" to -0.2f,
+        "GENERAL" to -0.3f,
+        "PORTRAIT" to 0.0f,
+    )
+
+    /**
+     * Hasta dónde dejan llegar las altas luces los profesionales (percentil 99 típico, codificado,
+     * con margen). Si lo más claro de la escena lo supera, el cerebro baja la exposición (máx. 0.5 EV).
+     * Solo en exteriores: en interiores lo más claro suele ser una lámpara, que se deja quemar.
+     */
+    val HIGHLIGHT_CEIL: Map<String, Float> = mapOf(
+        "SUNSET" to 0.86f, // SUNSET: p99 típico del experto 0.57 lineal = 0.78 codificado (+0.08 de margen)
+        "LANDSCAPE" to 0.89f, // LANDSCAPE: p99 típico del experto 0.62 lineal = 0.81 codificado (+0.08 de margen)
+        "BEACH" to 0.89f, // LANDSCAPE: p99 típico del experto 0.62 lineal = 0.81 codificado (+0.08 de margen)
+        "CITY" to 0.95f, // CITY: p99 típico del experto 0.72 lineal = 0.87 codificado (+0.08 de margen)
+    )
+
+    /**
+     * Curva de tono natural para la cámara (sobre la escala sRGB): igual hasta los medios tonos y,
+     * desde 0.55, un hombro suave que llega a 0.96 en el blanco (los profesionales de FiveK dejan el
+     * blanco en ~0.92; el automático del teléfono lo lleva a 1.0 y quema el cielo).
+     */
+    val TONE_IN = floatArrayOf(0.0000f, 0.0312f, 0.0625f, 0.0938f, 0.1250f, 0.1562f, 0.1875f, 0.2188f, 0.2500f, 0.2812f, 0.3125f, 0.3438f, 0.3750f, 0.4062f, 0.4375f, 0.4688f, 0.5000f, 0.5312f, 0.5625f, 0.5938f, 0.6250f, 0.6562f, 0.6875f, 0.7188f, 0.7500f, 0.7812f, 0.8125f, 0.8438f, 0.8750f, 0.9062f, 0.9375f, 0.9688f, 1.0000f)
+    val TONE_OUT = floatArrayOf(0.0000f, 0.0312f, 0.0625f, 0.0938f, 0.1250f, 0.1562f, 0.1875f, 0.2188f, 0.2500f, 0.2812f, 0.3125f, 0.3438f, 0.3750f, 0.4062f, 0.4375f, 0.4688f, 0.5000f, 0.5312f, 0.5625f, 0.5934f, 0.6238f, 0.6539f, 0.6836f, 0.7129f, 0.7418f, 0.7704f, 0.7985f, 0.8263f, 0.8538f, 0.8809f, 0.9076f, 0.9340f, 0.9600f)
 
     /** Curva de 64 puntos intercalados (entrada, salida) para TONEMAP_CURVE. */
     fun toneCurvePoints(): FloatArray {
@@ -50,8 +85,4 @@ object Calibration {
         return (TONE_OUT[i - 1] + (TONE_OUT[i] - TONE_OUT[i - 1]) * t).coerceIn(0f, 1f)
     }
 
-    /** Límites de color (croma CIELAB) por escena: provisionales hasta la calibración completa. */
-    val CHROMA: Map<String, NaturalProfile.Limits> = mapOf(
-        "ALL" to NaturalProfile.Limits(30f, 50f),
-    )
 }

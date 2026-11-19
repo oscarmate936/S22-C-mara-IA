@@ -145,7 +145,7 @@ class PhotoBrain(private val clock: () -> Long = { System.currentTimeMillis() })
         //     Así un cielo luminoso o un atardecer no salen "lavados" como en el automático del teléfono.
         val ceil = com.iacamara.app.processing.Calibration.HIGHLIGHT_CEIL[i.scene.name]
         if (ceil != null && !i.snowy && !protecting && !(subjectActive && subj!!.isFace) && i.p98 > ceil) {
-            val down = (2.2f * log2(i.p98 / ceil)).coerceIn(0f, 0.7f)
+            val down = (2.2f * log2(i.p98 / ceil)).coerceIn(0f, 0.5f)
             if (down >= 0.15f) { targetEv -= down; evWhy = "luces al nivel de un profesional (sin quemar)" }
         }
         // 4) Contraste que el sensor no abarca: cielo quemado Y sombras profundas a la vez.

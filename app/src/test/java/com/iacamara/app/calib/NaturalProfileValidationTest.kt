@@ -111,6 +111,14 @@ class NaturalProfileValidationTest {
             val phone = phoneLook(inp, gain)
             val nat = NaturalProfile.apply(phone, ib.width, ib.height, cat)
             val inNat = NaturalProfile.apply(inp, ib.width, ib.height, cat)
+            // Ejemplo visual (celular · perfil natural · profesional) del primero de cada escena.
+            if (cat in setOf("SUNSET", "LANDSCAPE", "PORTRAIT", "CITY") && !File(System.getenv("CALIB_DIR"), "visual_$cat.png").exists()) {
+                val w = ib.width; val h = ib.height
+                val o = IntArray((w * 3 + 16) * h)
+                for (y in 0 until h) for ((c, src) in listOf(phone, nat, e).withIndex()) System.arraycopy(src, y * w, o, y * (w * 3 + 16) + c * (w + 8), w)
+                val bmp = Bitmap.createScaledBitmap(Bitmap.createBitmap(o, w * 3 + 16, h, Bitmap.Config.ARGB_8888), 1200, (1200f * h / (w * 3 + 16)).toInt(), true)
+                File(System.getenv("CALIB_DIR"), "visual_$cat.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            }
             for (k in listOf(cat, "TODAS")) {
                 val a = acc.getOrPut(k) { Acc() }
                 a.n++

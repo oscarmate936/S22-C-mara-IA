@@ -1,0 +1,11 @@
+PERFIL NATURAL — validación con fotos de FiveK no usadas para calibrar
+escena     n   ΔE celular→experto  ΔE perfil natural→experto  color p95: experto / celular / natural
+ALL        33    17.9               17.0 (-5 %)               33 /   39 /   34
+CITY       93    14.3               14.0 (-2 %)               40 /   44 /   38
+INDOOR     74    19.0               17.1 (-10 %)               40 /   53 /   41
+LANDSCAPE  85    14.2               13.8 (-3 %)               51 /   56 /   48
+NIGHT      11    18.2               17.9 (-2 %)               47 /   53 /   45
+PORTRAIT   71    13.6               13.2 (-3 %)               42 /   49 /   40
+SUNSET     13    16.3               15.4 (-5 %)               42 /   50 /   40
+TODAS     380    15.6               14.8 (-5 %)               42 /   49 /   41
+Sobre la toma original sin saturar: el perfil cambia el color 1.7 de croma de media (casi nada) y ΔE 16.3 → 16.3
