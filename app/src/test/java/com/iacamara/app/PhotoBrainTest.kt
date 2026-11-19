@@ -89,4 +89,10 @@ class PhotoBrainTest {
         val d = PhotoBrain().decide(input(Scene.ANIMAL, luma = 0.12f, iso = 3200), null)
         assertEquals(1f, d.lensFactor)
     }
+
+    @Test fun tripodeNoOscilaAlBajarElIso() {
+        // Ya en exposición larga, el ISO bajó a 200: debe mantenerla, no soltarla y volver a tomarla.
+        val d = PhotoBrain().decide(input(Scene.NIGHT, steady = true, gyro = 0.002f, luma = 0.3f, iso = 200), engaged = 250_000_000L)
+        assertEquals(250_000_000L, d.shutterNs)
+    }
 }

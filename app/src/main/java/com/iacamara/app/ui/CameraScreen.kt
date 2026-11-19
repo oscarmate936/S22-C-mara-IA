@@ -365,7 +365,10 @@ fun CameraScreen(
             AnimatedVisibility(countdown > 0, Modifier.align(Alignment.Center), enter = fadeIn(), exit = fadeOut()) {
                 Text("$countdown", style = Type.Display.copy(fontSize = Type.Display.fontSize * 2.6f), color = Palette.Paper.copy(alpha = 0.9f))
             }
-            val pinching = System.currentTimeMillis() - lastPinch < 900
+            var pinching by remember { mutableStateOf(false) }
+            LaunchedEffect(lastPinch) {
+                if (lastPinch > 0) { pinching = true; delay(900); pinching = false }
+            }
             AnimatedVisibility(pinching, Modifier.align(Alignment.Center), enter = fadeIn(), exit = fadeOut()) {
                 engine.activeLens?.let {
                     InfoPill(com.iacamara.app.camera.formatFactor(it.baseFactor * engine.zoomRatio) + "×", Palette.Amber)

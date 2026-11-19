@@ -32,6 +32,17 @@ class BurstProcessor(private val context: Context) {
         shadowLift: Float,
         onProgress: (Int, Int) -> Unit,
     ): Uri? {
+        val (result, count) = combine(frames, kind, shadowLift, onProgress) ?: return null
+        return save(result, frames[0], rotationDegrees, kind, count).also { result.recycle() }
+    }
+
+    /** Decodifica, alinea y combina la ráfaga. Devuelve la imagen final y cuántas tomas se usaron. */
+    fun combine(
+        frames: List<ByteArray>,
+        kind: BurstKind,
+        shadowLift: Float,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+    ): Pair<Bitmap, Int>? {
         if (frames.isEmpty()) return null
         val opts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
         val first = BitmapFactory.decodeByteArray(frames[0], 0, frames[0].size, opts) ?: return null
@@ -61,8 +72,7 @@ class BurstProcessor(private val context: Context) {
 
         val out = mean?.result(shadowLift) ?: focus!!.result()
         val result = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
-        val count = mean?.count ?: focus!!.count
-        return save(result, frames[0], rotationDegrees, kind, count).also { result.recycle() }
+        return result to (mean?.count ?: focus!!.count)
     }
 
     private fun save(bmp: Bitmap, firstJpeg: ByteArray, rotationDegrees: Int, kind: BurstKind, count: Int): Uri? {

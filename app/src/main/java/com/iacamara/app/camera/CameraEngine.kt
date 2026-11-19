@@ -250,6 +250,10 @@ class CameraEngine(private val context: Context) {
     private val processingExecutor = Executors.newSingleThreadExecutor()
     /** Enfoque temporal durante un apilado de enfoque. */
     private var burstFocus: Float? = null
+    /** Exposición y blancos bloqueados durante una ráfaga (todas las tomas iguales). */
+    private var burstLock = false
+    /** Un cambio de lente/formato pedido durante una captura se aplica al terminar. */
+    private var pendingRebind = false
     private var lastBrainRun = 0L
     private var gyro = 0f
     private var steady = false
@@ -368,9 +372,13 @@ class CameraEngine(private val context: Context) {
 
     fun selectLens(lens: Lens, byUser: Boolean = true) {
         if (byUser) { lastUserLens = System.currentTimeMillis(); lensNotice = null }
-        if (lens == activeLens) return
+        if (lens == activeLens) {
+            camera?.cameraControl?.setZoomRatio(lens.zoom)
+            return
+        }
         val needsRebind = lens.cameraId != boundCameraId
         activeLens = lens
+        lastSubjectTime = 0L // el encuadre cambia: no confundirlo con movimiento del sujeto
         if (needsRebind) rebind() else camera?.cameraControl?.setZoomRatio(lens.zoom)
     }
 
@@ -405,6 +413,7 @@ class CameraEngine(private val context: Context) {
     }
 
     private fun rebind() {
+        if (isCapturing) { pendingRebind = true; return }
         val p = provider ?: return
         val owner = lifecycleOwner ?: return
         val view = previewView ?: return
@@ -462,6 +471,7 @@ class CameraEngine(private val context: Context) {
             .build()
 
         try {
+            camera?.cameraInfo?.zoomState?.removeObservers(owner)
             p.unbindAll()
             val cam = try {
                 p.bindToLifecycle(owner, cameraSelector, preview, capture, analysis).also { rawActive = rawSupported }
@@ -626,14 +636,15 @@ class CameraEngine(private val context: Context) {
 
         if (mode == CaptureMode.AUTO) {
             val bf = burstFocus
-            if (!brainActive && bf != null) {
+            if (!brainActive && (bf != null || burstLock)) {
                 cam.cameraControl.setExposureCompensationIndex(0)
-                c2.setCaptureRequestOptions(
-                    CaptureRequestOptions.Builder()
-                        .setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
-                        .setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, bf)
-                        .build(),
-                )
+                val o = CaptureRequestOptions.Builder()
+                bf?.let {
+                    o.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
+                    o.setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, it)
+                }
+                o.addBurstLock()
+                c2.setCaptureRequestOptions(o.build())
                 return
             }
             if (!brainActive) {
@@ -659,6 +670,7 @@ class CameraEngine(private val context: Context) {
                 b.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
                 b.setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, it)
             }
+            b.addBurstLock()
             c2.setCaptureRequestOptions(b.build())
             return
         }
@@ -679,7 +691,14 @@ class CameraEngine(private val context: Context) {
             b.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
             b.setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, it)
         }
+        b.addBurstLock()
         c2.setCaptureRequestOptions(b.build())
+    }
+
+    private fun CaptureRequestOptions.Builder.addBurstLock() {
+        if (!burstLock) return
+        setCaptureRequestOption(CaptureRequest.CONTROL_AE_LOCK, true)
+        setCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK, true)
     }
 
     /**
@@ -699,7 +718,9 @@ class CameraEngine(private val context: Context) {
         val shutterFree = fixedShutter == null
         if (isoFree == shutterFree) return // ambos manuales: solo se muestra el fotómetro
         val now = System.currentTimeMillis()
-        if (now - lastPriorityApply < 200 || abs(error) < 0.15f) return
+        // Esperar al menos ~2 fotogramas para ver el efecto del ajuste anterior (evita oscilar).
+        val frameMs = ((fixedShutter ?: 0L) / 1_000_000L).coerceAtLeast(33L)
+        if (now - lastPriorityApply < maxOf(200L, frameMs * 3) || abs(error) < 0.15f) return
         lastPriorityApply = now
         val adjust = 2f.pow((error * 0.6f).coerceIn(-1.5f, 1.5f))
         if (isoFree) {
@@ -769,7 +790,7 @@ class CameraEngine(private val context: Context) {
     private fun maybeAutoLens(sc: Scene) {
         val now = System.currentTimeMillis()
         if (sc != stableScene) { stableScene = sc; stableSince = now; return }
-        if (!brainActive || !autoLens || useFront) return
+        if (!brainActive || !autoLens || useFront || isCapturing) return
         if (now - stableSince < 2000 || now - lastUserLens < 15000 || autoLensScene == sc) return
         val factor = lastLensDecision ?: return
         val current = activeLens ?: return
@@ -826,7 +847,7 @@ class CameraEngine(private val context: Context) {
     private fun focusOnSubject(s: Subject) {
         val cam = camera ?: return
         val view = previewView ?: return
-        if (!subjectFocus || aeAfLocked || manualFocus != null) return
+        if (!subjectFocus || aeAfLocked || manualFocus != null || isCapturing) return
         val now = System.currentTimeMillis()
         if (now - lastUserTap < 5000 || now - lastAutoFocus < 2500) return
         val moved = abs(s.anchorX - lastFocusX) + abs(s.anchorY - lastFocusY)
@@ -894,6 +915,14 @@ class CameraEngine(private val context: Context) {
         ).build()
         var pending = 2
         var success = false
+        var reported = false
+        fun report(ok: Boolean) {
+            if (reported) return
+            reported = true
+            endCapture()
+            if (ok) captureCount++
+            onDone(ok)
+        }
         ic.takePicture(opts("image/x-adobe-dng"), opts("image/jpeg"), ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(result: ImageCapture.OutputFileResults) {
                 val uri = result.savedUri
@@ -905,16 +934,23 @@ class CameraEngine(private val context: Context) {
                     }
                 }
                 success = true
-                if (--pending <= 0 || uri == null) { isCapturing = false; captureCount++; onDone(true) }
+                if (--pending <= 0 || uri == null) report(true)
             }
 
             override fun onError(e: ImageCaptureException) {
                 Log.e(TAG, "Error al capturar RAW", e)
-                isCapturing = false
                 if (!success) errorMessage = "No se pudo guardar la foto RAW"
-                onDone(success)
+                report(success)
             }
         })
+    }
+
+    private fun endCapture() {
+        isCapturing = false
+        if (pendingRebind) {
+            pendingRebind = false
+            rebind()
+        }
     }
 
     /** ¿Hace falta flash ahora? En AUTO solo con poca luz. */
@@ -1007,20 +1043,24 @@ class CameraEngine(private val context: Context) {
     private fun captureBurst(ic: ImageCapture, kind: BurstKind, n: Int, onDone: (Boolean) -> Unit) {
         val frames = ArrayList<ByteArray>(n)
         var rotation = 0
+        burstLock = true
+        applyControls()
         val baseFocus = (manualFocus ?: live.focusDiopters).coerceAtLeast(0.5f)
         val maxFocus = caps.focusValues.lastOrNull() ?: baseFocus
         val focusSteps = listOf(0.8f, 0.9f, 1f, 1.12f, 1.25f).map { (baseFocus * it).coerceIn(0f, maxFocus) }
 
         fun finish(ok: Boolean) {
             burstFocus = null
+            burstLock = false
             applyControls()
-            isCapturing = false
+            endCapture()
             burstStatus = null
             onDone(ok)
         }
 
         fun process() {
             burstFocus = null
+            burstLock = false
             applyControls()
             burstStatus = "Combinando $n tomas…"
             processingExecutor.execute {
@@ -1083,7 +1123,7 @@ class CameraEngine(private val context: Context) {
         ).build()
         ic.takePicture(output, ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(result: ImageCapture.OutputFileResults) {
-                isCapturing = false
+                endCapture()
                 captureCount++
                 result.savedUri?.let { uri ->
                     lastPhotoUri = uri
@@ -1096,7 +1136,7 @@ class CameraEngine(private val context: Context) {
             }
 
             override fun onError(e: ImageCaptureException) {
-                isCapturing = false
+                endCapture()
                 Log.e(TAG, "Error al capturar", e)
                 errorMessage = "No se pudo guardar la foto"
                 onDone(false)

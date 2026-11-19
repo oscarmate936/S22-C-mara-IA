@@ -91,7 +91,9 @@ class PhotoBrain {
         if (i.gyro > 0.03f) limit(0.002 * hfov / i.gyro, "compenso el movimiento de tu mano")
 
         var shutter: Long? = null
-        val tripodNight = i.steady && i.liveIso >= 400 && i.subject == null &&
+        // Si ya estamos en exposición larga, el ISO bajó justamente por eso: no soltarla (evita oscilar).
+        val alreadyLong = engaged != null && engaged >= 200_000_000L
+        val tripodNight = i.steady && (i.liveIso >= 400 || alreadyLong) && i.subject == null &&
             i.scene in setOf(Scene.NIGHT, Scene.LANDSCAPE, Scene.CITY, Scene.GENERAL, Scene.SUNSET)
         if (tripodNight) {
             shutter = snap(250_000_000L, i.shutterValues)

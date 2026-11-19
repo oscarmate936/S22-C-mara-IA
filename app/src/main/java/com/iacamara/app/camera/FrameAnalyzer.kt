@@ -15,6 +15,11 @@ class FrameStats(
     val clippedShadows: Float,
     /** Calidez del color: >0 tonos rojizos/dorados, <0 tonos azulados. */
     val warmth: Float = 0f,
+    /**
+     * Calidez de las zonas más luminosas (el 25 % más claro, normalmente el cielo).
+     * Un atardecer tiene el cielo naranja; una piel o una mesa cálidas no cuentan.
+     */
+    val highlightWarmth: Float = 0f,
 )
 
 /**
@@ -67,26 +72,43 @@ class FrameAnalyzer(
         }
         if (count == 0) return null
 
+        // Umbral del 25 % más luminoso, a partir del histograma.
+        var acc = 0
+        var p75 = 255
+        for (bin in 63 downTo 0) {
+            acc += bins[bin]
+            if (acc >= count / 4) { p75 = bin shl 2; break }
+        }
+        val brightCut = maxOf(p75, 90)
+
         // Crominancia (U = azul, V = rojo) submuestreada a la mitad.
         var warmth = 0f
+        var highlightWarmth = 0f
         if (image.planes.size >= 3) {
             val u = image.planes[1]
             val v = image.planes[2]
             var su = 0L
             var sv = 0L
             var n = 0
+            var hd = 0L
+            var hn = 0
             var cy = 0
             while (cy < h / 2) {
                 var cx = 0
                 while (cx < w / 2) {
-                    su += u.buffer.get(cy * u.rowStride + cx * u.pixelStride).toInt() and 0xFF
-                    sv += v.buffer.get(cy * v.rowStride + cx * v.pixelStride).toInt() and 0xFF
+                    val uu = u.buffer.get(cy * u.rowStride + cx * u.pixelStride).toInt() and 0xFF
+                    val vv = v.buffer.get(cy * v.rowStride + cx * v.pixelStride).toInt() and 0xFF
+                    su += uu
+                    sv += vv
                     n++
-                    cx += 8
+                    val yy = buffer.get((cy * 2) * rowStride + (cx * 2) * pixelStride).toInt() and 0xFF
+                    if (yy >= brightCut) { hd += vv - uu; hn++ }
+                    cx += 4
                 }
-                cy += 8
+                cy += 4
             }
             if (n > 0) warmth = ((sv - su).toFloat() / n) / 255f
+            if (hn > 0) highlightWarmth = (hd.toFloat() / hn) / 255f
         }
 
         val peak = bins.max().coerceAtLeast(1).toFloat()
@@ -96,6 +118,7 @@ class FrameAnalyzer(
             clippedHighlights = high.toFloat() / count,
             clippedShadows = low.toFloat() / count,
             warmth = warmth,
+            highlightWarmth = highlightWarmth,
         )
     }
 }

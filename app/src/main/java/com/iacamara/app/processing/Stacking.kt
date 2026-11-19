@@ -115,25 +115,46 @@ class MeanStacker(private val w: Int, private val h: Int) {
             return
         }
         val n = count
+        // 1) Detección de movimiento por zonas de 4×4 px: el promedio de 16 píxeles casi no tiene
+        //    ruido, así que un píxel ruidoso no se confunde con un objeto que se movió.
+        val bw = (w + GB - 1) / GB
+        val bh = (h + GB - 1) / GB
+        val diff = IntArray(bw * bh)
+        val cnt = IntArray(bw * bh)
+        parallelRows(h, align = GB) { ya, yb -> for (y in ya until yb) {
+            val sy = y + dy
+            val brow = (y / GB) * bw
+            for (x in 0 until w) {
+                val i = y * w + x
+                val avgL = (r[i] * 2 + g[i] * 5 + b[i]) / (8 * n)
+                val sx = x + dx
+                val curL = if (sx in 0 until w && sy in 0 until h) {
+                    val p = px[sy * w + sx]
+                    (((p shr 16) and 0xFF) * 2 + ((p shr 8) and 0xFF) * 5 + (p and 0xFF)) shr 3
+                } else avgL
+                val bi = brow + x / GB
+                diff[bi] += curL - avgL
+                cnt[bi]++
+            }
+        } }
+        // 2) Suma de la toma, salvo en las zonas donde algo se movió.
         parallelRows(h) { ya, yb -> for (y in ya until yb) {
             val sy = y + dy
             val row = y * w
+            val brow = (y / GB) * bw
             for (x in 0 until w) {
                 val i = row + x
-                val ar = r[i] / n
-                val ag = g[i] / n
-                val ab = b[i] / n
-                var cr = ar
-                var cg = ag
-                var cb = ab
+                val bi = brow + x / GB
+                val moved = abs(diff[bi]) > GHOST_THRESHOLD * cnt[bi]
+                var cr = r[i] / n
+                var cg = g[i] / n
+                var cb = b[i] / n
                 val sx = x + dx
-                if (sx in 0 until w && sy in 0 until h) {
+                if (!moved && sx in 0 until w && sy in 0 until h) {
                     val p = px[sy * w + sx]
-                    val pr = (p shr 16) and 0xFF
-                    val pg = (p shr 8) and 0xFF
-                    val pb = p and 0xFF
-                    val dl = abs((pr * 2 + pg * 5 + pb) - (ar * 2 + ag * 5 + ab)) shr 3
-                    if (dl <= GHOST_THRESHOLD) { cr = pr; cg = pg; cb = pb }
+                    cr = (p shr 16) and 0xFF
+                    cg = (p shr 8) and 0xFF
+                    cb = p and 0xFF
                 }
                 r[i] = (r[i] + cr).toShort()
                 g[i] = (g[i] + cg).toShort()
@@ -164,8 +185,10 @@ class MeanStacker(private val w: Int, private val h: Int) {
     }
 
     companion object {
-        /** Diferencia de luminancia a partir de la cual un píxel se considera "en movimiento". */
-        const val GHOST_THRESHOLD = 48
+        /** Diferencia media de luminancia (por zona de 4×4) a partir de la cual algo "se movió". */
+        const val GHOST_THRESHOLD = 22
+        /** Tamaño de zona para detectar movimiento. */
+        const val GB = 4
     }
 }
 

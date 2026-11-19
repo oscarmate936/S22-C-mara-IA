@@ -151,6 +151,11 @@ data class SceneResult(val scene: Scene, val confidence: Float, val evidence: Li
  * y estabiliza el resultado para que la escena no "parpadee".
  */
 class SceneBrain {
+    companion object {
+        /** Calidez mínima del cielo para considerarlo un atardecer (calibrado con fotos reales). */
+        const val SUNSET_SKY_WARMTH = 0.15f
+    }
+
     private var current: SceneResult = SceneResult(Scene.GENERAL, 0f, emptyList())
     private var candidate: Scene = Scene.GENERAL
     private var streak = 0
@@ -181,9 +186,12 @@ class SceneBrain {
             val dark = stats.meanLuma < 0.2f
             val slow = live.shutterNs >= 1_000_000_000L / 20 || live.iso >= 1600
             if (dark && slow) add(Scene.NIGHT, 0.9f, "poca luz")
-            // Cielo cálido: mucho rojo/naranja en la imagen y escena con cielo.
+            // Atardecer: el cielo (la zona más luminosa) es naranja y hay cielo en la escena.
+            // No se mira la foto entera: una piel o una mesa cálidas no son un atardecer.
             val sky = d.labels.any { it.first in Labels.SKY }
-            if (stats.warmth > 0.07f && sky) add(Scene.SUNSET, 0.75f + stats.warmth, "luz cálida")
+            if (sky && stats.highlightWarmth > SUNSET_SKY_WARMTH) {
+                add(Scene.SUNSET, (0.75f + stats.highlightWarmth).coerceAtMost(0.97f), "cielo cálido")
+            }
         }
         // Muy cerca: enfoque a menos de ~15 cm
         if (!front && live.focusDiopters > 6.5f) add(Scene.MACRO, 0.8f, "enfoque a ${(100f / live.focusDiopters).toInt()} cm")

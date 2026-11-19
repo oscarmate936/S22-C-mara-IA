@@ -1,0 +1,38 @@
+=== ALINEACIÓN con fotos reales y ruido ===
+ALINEACIÓN  astronaut.png            error medio 0.00 px
+ALINEACIÓN  chelsea.png              error medio 0.00 px
+ALINEACIÓN  coffee.png               error medio 0.00 px
+ALINEACIÓN  rocket.jpg               error medio 0.00 px
+ALINEACIÓN  hubble_deep_field.jpg    error medio 0.00 px
+ALINEACIÓN  aciertos (error ≤ 1 px): 30/30
+=== DECISIÓN DE ESCENA (lo que devolvería ML Kit + física real de cada foto) ===
+astronauta (rostro)            → Retrato                 93%  sujeto: Persona   (por: rostro)
+gato Chelsea                   → Mascota                 93%  sujeto: Gato      (por: Gato, Mascota)
+taza de café                   → Comida                  65%  sujeto: Café      (por: Café, Comida)
+cielo nocturno (Hubble)        → Noche · Poca luz        90%  sujeto: —         (por: poca luz)
+atardecer (cielo naranja)      → Atardecer · Amanecer    97%  sujeto: —         (por: cielo cálido)
+cohete, cielo azul de día      → Escena general          54%  sujeto: —         (por: )
+flor a 10 cm                   → Macro · Detalle         80%  sujeto: Flor      (por: Flor, enfoque a 10 cm)
+estabilidad: mascota → (lectura vacía) → Mascota → Mascota
+=== FOTÓMETRO Y COLOR (analizador real, fotos convertidas a YUV como la cámara) ===
+astronaut.png            luz media 0.45  fotómetro  -0.1 EV  calidez +0.116  cielo/luces +0.036  altas luces  0.9%
+chelsea.png              luz media 0.47  fotómetro  +0.0 EV  calidez +0.150  cielo/luces +0.123  altas luces  0.0%
+coffee.png               luz media 0.40  fotómetro  -0.4 EV  calidez +0.270  cielo/luces +0.244  altas luces  0.4%
+rocket.jpg               luz media 0.22  fotómetro  -2.4 EV  calidez -0.096  cielo/luces +0.030  altas luces  0.1%
+hubble_deep_field.jpg    luz media 0.07  fotómetro  -5.8 EV  calidez -0.002  cielo/luces -0.024  altas luces  0.0%
+chelsea oscurecida 2 pasos: fotómetro +0.04 → -1.97 (diferencia -2.01, ideal −2.00)
+chelsea sobreexpuesta 2 pasos: altas luces 20.2% (aviso si > 3%)
+atardecer sintético: cielo/luces +0.422 (umbral de la IA 0.15)
+=== MACRO+ (5 distancias de enfoque, pulso ±4 px) ===
+MACRO  gato_inclinado         mejor toma sola:  26.3 dB (nitidez 19.7)   apilado:  29.0 dB (nitidez 22.5)   original: nitidez 13.3
+MACRO  taza_redonda           mejor toma sola:  22.3 dB (nitidez 33.4)   apilado:  25.0 dB (nitidez 40.5)   original: nitidez 19.7
+=== MODO NOCHE (8 tomas, pulso ±12 px) ===
+NOCHE  astronaut_f300.0                   1 toma:  25.0 dB   8 tomas:  29.2 dB   mejora:  +4.3 dB
+NOCHE  coffee_f150.0                      1 toma:  23.7 dB   8 tomas:  29.7 dB   mejora:  +6.0 dB
+NOCHE  chelsea_f80.0                      1 toma:  23.6 dB   8 tomas:  32.0 dB   mejora:  +8.3 dB
+NOCHE  rocket_f150.0_rot                  1 toma:  22.8 dB   8 tomas:  28.2 dB   mejora:  +5.4 dB
+NOCHE  coffee_f150.0_fantasma             1 toma:  23.7 dB   8 tomas:  29.9 dB   mejora:  +6.2 dB
+       fantasma: error medio en la trayectoria del objeto = 5.5 niveles (de 255)
+=== MODO NOCHE DE PUNTA A PUNTA (JPEG real → BurstProcessor) ===
+tomas usadas: 8/8   progreso informado: [1, 2, 3, 4, 5, 6, 7, 8]   tiempo: 315 ms (600×400)
+1 toma: 27.2 dB   8 tomas combinadas: 32.7 dB   mejora +5.5 dB
