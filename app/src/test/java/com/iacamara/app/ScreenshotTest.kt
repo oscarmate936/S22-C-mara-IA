@@ -1,0 +1,52 @@
+package com.iacamara.app
+
+import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onRoot
+import androidx.test.core.app.ApplicationProvider
+import com.iacamara.app.camera.CameraEngine
+import com.iacamara.app.sensors.DeviceSensors
+import com.iacamara.app.ui.CameraScreen
+import com.iacamara.app.ui.PermissionScreen
+import com.iacamara.app.ui.theme.IACamaraTheme
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.File
+
+/** Genera capturas de la interfaz en build/screenshots/ para revisar el diseño. */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [34], qualifiers = "w411dp-h891dp-420dpi")
+class ScreenshotTest {
+    @get:Rule val rule = createComposeRule()
+
+    private fun save(name: String) {
+        val bmp = rule.onRoot().captureToImage().asAndroidBitmap()
+        val dir = File("build/screenshots").apply { mkdirs() }
+        File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test fun permission() {
+        rule.setContent { IACamaraTheme { PermissionScreen(false) {} } }
+        rule.waitForIdle(); save("1_bienvenida")
+    }
+
+    private fun camera(pro: Boolean, name: String) {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val engine = CameraEngine(ctx)
+        rule.setContent { IACamaraTheme { CameraScreen(engine, Prefs(ctx), DeviceSensors(ctx)) {} } }
+        rule.waitForIdle()
+        rule.runOnIdle { engine.loadDemoState(pro) }
+        rule.mainClock.advanceTimeBy(1500)
+        rule.waitForIdle(); save(name)
+    }
+
+    @Test fun cameraAuto() = camera(false, "2_auto")
+    @Test fun cameraPro() = camera(true, "3_pro")
+}

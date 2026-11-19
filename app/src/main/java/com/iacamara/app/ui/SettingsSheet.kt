@@ -1,0 +1,196 @@
+package com.iacamara.app.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Equalizer
+import androidx.compose.material.icons.rounded.Straighten
+import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import com.iacamara.app.BuildConfigInfo
+import com.iacamara.app.GridType
+import com.iacamara.app.Prefs
+import com.iacamara.app.ui.components.ChoiceChip
+import com.iacamara.app.ui.theme.Palette
+import com.iacamara.app.ui.theme.Type
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = Palette.Graphite,
+        contentColor = Palette.Paper,
+        scrimColor = Color.Black.copy(alpha = 0.55f),
+        dragHandle = {
+            Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(width = 36.dp, height = 4.dp).background(Palette.Fog, RoundedCornerShape(2.dp)))
+        },
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp),
+        ) {
+            Text("Ajustes", style = Type.Title, color = Palette.Paper)
+            Spacer(Modifier.height(4.dp))
+            Text("Ayudas visuales y comportamiento de la cámara.", style = Type.Body, color = Palette.Mist)
+
+            Section("COMPOSICIÓN")
+            Card {
+                Text("Guías", style = Type.BodyStrong, color = Palette.Paper)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Coloca al sujeto sobre una línea o un punto fuerte para una foto más equilibrada.",
+                    style = Type.Body, color = Palette.Mist,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GridType.entries.forEach { g ->
+                        ChoiceChip(g.label, null, prefs.grid == g) { prefs.updateGrid(g) }
+                    }
+                }
+                Divider()
+                ToggleRow(Icons.Rounded.Straighten, "Nivel de horizonte", "Se pone verde cuando la foto está recta.", prefs.level, prefs::updateLevel)
+            }
+
+            Section("EXPOSICIÓN")
+            Card {
+                ToggleRow(Icons.Rounded.Equalizer, "Histograma", "Muestra cómo se reparte la luz, de sombras a altas luces.", prefs.histogram, prefs::updateHistogram)
+                Divider()
+                ToggleRow(Icons.Rounded.WbSunny, "Aviso de altas luces", "Te avisa cuando una zona se quema a blanco puro.", prefs.highlightWarning, prefs::updateHighlightWarning)
+            }
+
+            Section("SISTEMA")
+            Card {
+                ToggleRow(Icons.Rounded.Vibration, "Respuesta háptica", "Vibración suave en diales, nivel y disparo.", prefs.haptics, prefs::updateHaptics)
+            }
+
+            Section("HOJA DE RUTA")
+            Card {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(34.dp).clip(CircleShape).background(Palette.Cyan.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(Icons.Rounded.AutoAwesome, null, tint = Palette.Cyan, modifier = Modifier.size(18.dp)) }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text("IA Cámara ${BuildConfigInfo.VERSION}", style = Type.BodyStrong, color = Palette.Paper)
+                        Text("Fase 1 · Control profesional", style = Type.Body, color = Palette.Mist)
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Roadmap("1", "Control manual total y lentes", done = true)
+                Roadmap("2", "IA que reconoce la escena y al sujeto", done = false)
+                Roadmap("3", "Cerebro fotógrafo: ajuste automático experto", done = false)
+                Roadmap("4", "RAW, apilado, macro y modo noche", done = false)
+            }
+        }
+    }
+}
+
+@Composable
+private fun Section(title: String) {
+    Spacer(Modifier.height(22.dp))
+    Text(title, style = Type.Label, color = Palette.Mist)
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun Card(content: @Composable () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Palette.Slate.copy(alpha = 0.6f))
+            .border(1.dp, Palette.Hairline, RoundedCornerShape(18.dp))
+            .padding(16.dp),
+    ) { content() }
+}
+
+@Composable
+private fun Divider() {
+    Spacer(Modifier.height(14.dp))
+    Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Hairline))
+    Spacer(Modifier.height(14.dp))
+}
+
+@Composable
+private fun ToggleRow(icon: ImageVector, title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onChange(!checked) },
+    ) {
+        Icon(icon, null, tint = if (checked) Palette.Amber else Palette.Mist, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = Type.BodyStrong, color = Palette.Paper)
+            Text(subtitle, style = Type.Body, color = Palette.Mist)
+        }
+        Spacer(Modifier.width(10.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Palette.Ink,
+                checkedTrackColor = Palette.Amber,
+                uncheckedThumbColor = Palette.Mist,
+                uncheckedTrackColor = Palette.Ink,
+                uncheckedBorderColor = Palette.Fog,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun Roadmap(n: String, text: String, done: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 5.dp)) {
+        Box(
+            Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(if (done) Palette.Amber else Color.Transparent)
+                .border(1.dp, if (done) Palette.Amber else Palette.Fog, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(n, style = Type.ReadoutSmall, color = if (done) Palette.Ink else Palette.Mist)
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(text, style = Type.Body, color = if (done) Palette.Paper else Palette.Mist)
+    }
+}
