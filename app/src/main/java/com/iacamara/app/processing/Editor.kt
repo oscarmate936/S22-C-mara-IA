@@ -26,6 +26,8 @@ data class EditParams(
     val keystonePreview: Float = 0f,
     val previewWidth: Int = 1,
     val zones: ZoneRetouch.Params = ZoneRetouch.Params(sky = false, skin = false, foliage = false),
+    /** Escena con la que se tomó (para los límites de color). */
+    val scene: String = "ALL",
 ) {
     val isNeutral get() = !straighten && !perspective && zones.isNeutral
 }
@@ -99,6 +101,8 @@ object Editor {
 
     fun render(px: IntArray, w: Int, h: Int, masks: ZoneMasks.Masks?, p: EditParams): IntArray {
         var out = if (p.zones.isNeutral) px else ZoneRetouch.apply(px, w, h, masks, p.zones)
+        // El retoque nunca deja el color por encima del nivel de los profesionales.
+        if (!p.zones.isNeutral) out = NaturalProfile.apply(out, w, h, calibrationScene(p.scene))
         if (p.straighten || p.perspective) {
             val k = if (p.perspective) p.keystonePreview * p.previewWidth / w else 0f
             out = Straighten.apply(out, w, h, if (p.straighten) p.tiltDeg else 0f, k)
@@ -127,23 +131,47 @@ object Editor {
         return runCatching { context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(f.readBytes()) } != null }.getOrDefault(false)
     }
 
+    /** Escena de la app → grupo de calibración (FiveK). */
+    fun calibrationScene(scene: String): String = when (scene) {
+        "SUNSET" -> "SUNSET"
+        "LANDSCAPE", "BEACH" -> "LANDSCAPE"
+        "CITY" -> "CITY"
+        "PORTRAIT" -> "PORTRAIT"
+        "NIGHT" -> "NIGHT"
+        else -> "ALL"
+    }
+
     /**
-     * Retoque automático al tomar la foto (si está activado): zonas con la intensidad y la calidez
-     * de tu estilo. No endereza solo (eso recortaría la foto sin preguntarte).
+     * Al guardar cada foto: perfil natural (color sin saturar, al nivel de los profesionales) y,
+     * si está activado, el retoque por zonas con tu estilo. No endereza solo (eso recortaría la
+     * foto sin preguntarte). Si la foto ya está dentro de lo natural, no se toca.
+     * @return true si se reescribió la foto.
      */
-    fun autoRetouch(context: Context, uri: Uri, taste: TasteCore, scene: String): Boolean {
+    fun finishPhoto(context: Context, uri: Uri, taste: TasteCore, scene: String, natural: Boolean, retouch: Boolean): Boolean {
+        if (!natural && !retouch) return false
+        val cal = calibrationScene(scene)
+        val current = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() ?: return false
+        val small = decodeUpright(current, 1024) ?: return false
+        if (!retouch) {
+            // ¿Hace falta? Solo si el color pasa del nivel de los profesionales para esta escena.
+            val spx = IntArray(small.width * small.height).also { small.getPixels(it, 0, small.width, 0, 0, small.width, small.height) }
+            val lim = Calibration.CHROMA[cal] ?: Calibration.CHROMA.getValue("ALL")
+            if (NaturalProfile.chroma95(spx) <= lim.knee * 1.05f) { small.recycle(); return false }
+        }
+        val faces = if (retouch) faces(small) else emptyList()
+        small.recycle()
         val orig = original(context, uri) ?: return false
         val bmp = decodeUpright(orig) ?: return false
         val w = bmp.width; val h = bmp.height
-        val small = decodeUpright(orig, 1024)
-        val faces = small?.let { faces(it) }.orEmpty()
-        small?.recycle()
-        val px = IntArray(w * h).also { bmp.getPixels(it, 0, w, 0, 0, w, h) }
+        var px = IntArray(w * h).also { bmp.getPixels(it, 0, w, 0, 0, w, h) }
         bmp.recycle()
-        val masks = ZoneMasks.compute(px, w, h, faces.map { floatArrayOf(it.left, it.top, it.right, it.bottom) })
-        val p = ZoneRetouch.Params(strength = taste.zoneStrength(0.5f), warmth = taste.warmthBias(scene))
-        val out = ZoneRetouch.apply(px, w, h, masks, p)
-        val ob = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
-        return PhotoSaver.write(context, uri, ob, orig, 0, "IA Cámara · retoque por zonas", forceOrientation = ExifInterface.ORIENTATION_NORMAL).also { ob.recycle() }
+        if (retouch) {
+            val masks = ZoneMasks.compute(px, w, h, faces.map { floatArrayOf(it.left, it.top, it.right, it.bottom) })
+            px = ZoneRetouch.apply(px, w, h, masks, ZoneRetouch.Params(strength = taste.zoneStrength(0.5f), warmth = taste.warmthBias(scene)))
+        }
+        if (natural) px = NaturalProfile.apply(px, w, h, cal)
+        val ob = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+        val what = listOfNotNull("perfil natural".takeIf { natural }, "retoque por zonas".takeIf { retouch }).joinToString(" + ")
+        return PhotoSaver.write(context, uri, ob, orig, 0, "IA Cámara · $what", forceOrientation = ExifInterface.ORIENTATION_NORMAL).also { ob.recycle() }
     }
 }

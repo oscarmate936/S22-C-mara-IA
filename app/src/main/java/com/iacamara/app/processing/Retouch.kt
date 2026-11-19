@@ -234,8 +234,22 @@ object Straighten {
 object ZoneMasks {
     class Masks(val sky: FloatMap, val skin: FloatMap, val foliage: FloatMap)
 
+    /** Umbrales de cada zona (calibrados con ADE20K: 2 000 fotos con el cielo y la vegetación marcados a mano). */
+    data class Tuning(
+        val blueRatio: Float = 1.02f,
+        val blueMinL: Float = 0.22f,
+        val duskMinL: Float = 0.05f,
+        val paleMinL: Float = 0.62f,
+        val paleMaxSat: Float = 0.22f,
+        val warmMinL: Float = 0.45f,
+        val skyMaxTexture: Float = 0.045f,
+        val floodStep: Float = 0.08f,
+        val greenRatio: Float = 1.06f,
+        val greenMinSat: Float = 0.15f,
+    )
+
     /** @param faces rectángulos de rostros normalizados (izq, arriba, der, abajo), en la orientación de [px]. */
-    fun compute(px: IntArray, w: Int, h: Int, faces: List<FloatArray> = emptyList()): Masks {
+    fun compute(px: IntArray, w: Int, h: Int, faces: List<FloatArray> = emptyList(), t: Tuning = Calibration.MASKS): Masks {
         val f = max(1, max(w, h) / 384)
         val gw = max(1, w / f); val gh = max(1, h / f)
         val r = FloatArray(gw * gh); val g = FloatArray(gw * gh); val b = FloatArray(gw * gh); val l = FloatArray(gw * gh)
@@ -259,10 +273,10 @@ object ZoneMasks {
         val cand = BooleanArray(gw * gh) { i ->
             val mx = max(r[i], max(g[i], b[i])); val mn = min(r[i], min(g[i], b[i]))
             val sat = if (mx > 0f) (mx - mn) / mx else 0f
-            val blue = (b[i] > r[i] * 1.02f && b[i] >= g[i] * 0.92f && l[i] > 0.22f) || (b[i] > r[i] * 1.25f && b[i] > g[i] * 1.05f && l[i] > 0.05f) // azul de día o del crepúsculo
-            val pale = l[i] > 0.62f && sat < 0.22f
-            val warm = l[i] > 0.45f && r[i] > b[i]
-            tex[i] < 0.045f && (blue || pale || warm)
+            val blue = (b[i] > r[i] * t.blueRatio && b[i] >= g[i] * 0.92f && l[i] > t.blueMinL) || (b[i] > r[i] * 1.25f && b[i] > g[i] * 1.05f && l[i] > t.duskMinL) // azul de día o del crepúsculo
+            val pale = l[i] > t.paleMinL && sat < t.paleMaxSat
+            val warm = l[i] > t.warmMinL && r[i] > b[i]
+            tex[i] < t.skyMaxTexture && (blue || pale || warm)
         }
         // …y conectado con el borde superior (relleno por inundación).
         val sky = FloatArray(gw * gh)
@@ -271,7 +285,7 @@ object ZoneMasks {
         while (stack.isNotEmpty()) {
             val i = stack.removeLast(); val x = i % gw; val y = i / gw
             for (j in intArrayOf(if (x > 0) i - 1 else -1, if (x < gw - 1) i + 1 else -1, if (y > 0) i - gw else -1, if (y < gh - 1) i + gw else -1)) {
-                if (j >= 0 && sky[j] == 0f && cand[j] && abs(l[j] - l[i]) < 0.08f) { sky[j] = 1f; stack.addLast(j) }
+                if (j >= 0 && sky[j] == 0f && cand[j] && abs(l[j] - l[i]) < t.floodStep) { sky[j] = 1f; stack.addLast(j) }
             }
         }
         // El cielo de verdad ocupa una parte apreciable; unas manchas sueltas no cuentan.
@@ -293,7 +307,7 @@ object ZoneMasks {
         val fol = FloatArray(gw * gh) { i ->
             val mx = max(r[i], max(g[i], b[i])); val mn = min(r[i], min(g[i], b[i]))
             val sat = if (mx > 0f) (mx - mn) / mx else 0f
-            if (g[i] > r[i] * 1.06f && g[i] > b[i] * 1.06f && sat > 0.15f && l[i] > 0.06f && sky[i] == 0f) 1f else 0f
+            if (g[i] > r[i] * t.greenRatio && g[i] > b[i] * t.greenRatio && sat > t.greenMinSat && l[i] > 0.06f && sky[i] == 0f) 1f else 0f
         }
         fun refine(m: FloatArray): FloatMap {
             if (m.all { it == 0f }) return FloatMap(gw, gh, m)

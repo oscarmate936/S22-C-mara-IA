@@ -45,6 +45,8 @@ class Prefs(context: Context) {
         private set
     var autoRetouch by mutableStateOf(sp.getBoolean("autoRetouch", false))
         private set
+    var naturalProfile by mutableStateOf(sp.getBoolean("naturalProfile", true))
+        private set
     /** Ya se mostró el aviso de cómo ajustar en PRO. */
     var proHintShown by mutableStateOf(sp.getBoolean("proHint", false))
         private set
@@ -77,6 +79,7 @@ class Prefs(context: Context) {
     fun updateAutoLens(v: Boolean) { autoLens = v; sp.edit().putBoolean("autoLens", v).apply() }
     fun updateTorchFlash(v: Boolean) { torchFlash = v; sp.edit().putBoolean("torchFlash", v).apply() }
     fun updateMultiShot(v: Boolean) { multiShot = v; sp.edit().putBoolean("multiShot", v).apply() }
+    fun updateNaturalProfile(v: Boolean) { naturalProfile = v; sp.edit().putBoolean("naturalProfile", v).apply() }
     fun updateAutoRetouch(v: Boolean) { autoRetouch = v; sp.edit().putBoolean("autoRetouch", v).apply() }
     fun updateAutoPortrait(v: Boolean) { autoPortrait = v; sp.edit().putBoolean("autoPortrait", v).apply() }
     fun updateRaw(v: Boolean) { raw = v; sp.edit().putBoolean("raw", v).apply() }

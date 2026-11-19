@@ -68,6 +68,12 @@ class MainActivity : ComponentActivity() {
                 val permanentlyDenied = askedOnce && !granted &&
                     !shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
 
+                // Solo para el Galaxy S22+ (en otro teléfono, aviso antes de abrir).
+                var deviceOk by remember { mutableStateOf(com.iacamara.app.camera.S22Plus.isThisPhone) }
+                if (!deviceOk) {
+                    com.iacamara.app.ui.DeviceGate(android.os.Build.MODEL) { deviceOk = true }
+                    return@IACamaraTheme
+                }
                 Crossfade(granted, label = "permission") { ok ->
                     if (ok) {
                         CameraScreen(engine, prefs, sensors, registerVolumeShutter = { volumeShutter = it })

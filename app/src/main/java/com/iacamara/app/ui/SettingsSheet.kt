@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Camera
 import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Portrait
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Psychology
@@ -121,6 +122,8 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
             Card {
                 ToggleRow(Icons.Rounded.AutoAwesomeMotion, "Tomas múltiples automáticas", "Con poca luz combina hasta 8 fotos (menos ruido) y aclara las sombras por zonas; con el teléfono apoyado de noche hace astrofotografía; con zoom digital, súper resolución; en macro varias distancias de enfoque y con mascotas, movimiento o grupos elige el mejor momento.", prefs.multiShot, prefs::updateMultiShot)
                 Divider()
+                ToggleRow(Icons.Rounded.Tune, "Perfil natural (recomendado)", "Calibrado con 1 000 fotos editadas por fotógrafos profesionales: curva de tono que no quema el cielo, menos nitidez artificial y color al nivel de un profesional (sin cielos neón ni atardeceres fosforito).", prefs.naturalProfile, prefs::updateNaturalProfile)
+                Divider()
                 ToggleRow(Icons.Rounded.AutoFixHigh, "Retoque automático por zonas", "Cada foto recibe un retoque natural: cielo más profundo, piel bien expuesta y vegetación con color, con tu estilo. Siempre puedes restaurar la original desde «Mejorar».", prefs.autoRetouch, prefs::updateAutoRetouch)
                 Divider()
                 ToggleRow(Icons.Rounded.Portrait, "Retrato automático", "En modo IA, cuando hay una persona cerca, recorta al sujeto y desenfoca el fondo. Desde la galería de la app puedes cambiar el desenfoque o quitarlo.", prefs.autoPortrait, prefs::updateAutoPortrait)
@@ -186,6 +189,25 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                 ToggleRow(Icons.Rounded.Vibration, "Respuesta háptica", "Vibración suave en diales, nivel y disparo.", prefs.haptics, prefs::updateHaptics)
             }
 
+            Section("TU GALAXY S22+")
+            Card {
+                for ((k, sp) in (com.iacamara.app.camera.S22Plus.REAR + com.iacamara.app.camera.S22Plus.FRONT).withIndex()) {
+                    if (k > 0) Divider()
+                    Column(Modifier.padding(vertical = 4.dp)) {
+                        Text(sp.name, style = Type.BodyStrong, color = Palette.Paper)
+                        Text(
+                            "${sp.megapixels} MP · f/${sp.aperture} · ${sp.equivalentMm.toInt()} mm · sensor ${sp.sensorInch}" +
+                                (if (sp.ois) " · estabilizador óptico" else "") + (if (!sp.autofocus) " · foco fijo" else ""),
+                            style = Type.ReadoutSmall, color = Palette.Mist,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "La IA usa estos datos: velocidad mínima a pulso según el estabilizador de cada lente, con poca luz recorte 3× del principal en vez del tele (más luz y menos ruido), y nunca el ultra gran angular para macro (no enfoca de cerca).",
+                    style = Type.Body, color = Palette.Mist,
+                )
+            }
             Section("HOJA DE RUTA")
             Card {
                 Row(verticalAlignment = Alignment.CenterVertically) {

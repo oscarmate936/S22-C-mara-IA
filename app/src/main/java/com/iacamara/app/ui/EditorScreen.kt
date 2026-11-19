@@ -128,6 +128,7 @@ fun EditorScreen(uri: Uri, onClose: (saved: Boolean) -> Unit, analysisOverride: 
             straighten = straighten && an.straighten.hasTilt, perspective = perspective && an.straighten.hasKeystone,
             tiltDeg = an.straighten.tiltDeg, keystonePreview = an.straighten.keystone, previewWidth = an.preview.width,
             zones = ZoneRetouch.Params(sky = sky, skin = skin, foliage = foliage, strength = strength, brightness = brightness, warmth = warmth),
+            scene = scene,
         )
     }
     // Vista previa (con una pequeña espera para no recalcular en cada movimiento del control).

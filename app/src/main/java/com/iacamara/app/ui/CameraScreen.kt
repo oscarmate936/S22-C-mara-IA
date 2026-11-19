@@ -192,10 +192,11 @@ fun CameraScreen(
     LaunchedEffect(engine.momentNotice) {
         if (engine.momentNotice != null) { delay(3500); engine.momentNotice = null }
     }
-    LaunchedEffect(prefs.multiShot, prefs.raw, prefs.autoPortrait, prefs.autoRetouch) {
+    LaunchedEffect(prefs.multiShot, prefs.raw, prefs.autoPortrait, prefs.autoRetouch, prefs.naturalProfile) {
         engine.multiShotAuto = prefs.multiShot
         engine.autoPortrait = prefs.autoPortrait
         engine.autoRetouch = prefs.autoRetouch
+        engine.naturalProfile = prefs.naturalProfile
         engine.rawRequested = prefs.raw
     }
     LaunchedEffect(Unit) {

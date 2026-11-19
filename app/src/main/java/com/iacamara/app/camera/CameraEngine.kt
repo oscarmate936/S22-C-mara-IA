@@ -114,6 +114,11 @@ data class SensorCaps(
     val manualFocus: Boolean = false,
     val hasFlash: Boolean = false,
     val aperture: Float = 0f,
+    /** El sensor acepta una curva de tono propia (perfil natural). */
+    val toneCurve: Boolean = false,
+    val maxCurvePoints: Int = 0,
+    val edgeFast: Boolean = false,
+    val noiseHq: Boolean = false,
 )
 
 @SuppressLint("UnsafeOptInUsageError")
@@ -151,9 +156,10 @@ class CameraEngine(private val context: Context) {
     private fun onPhotoSaved(uri: Uri) {
         val sc = sceneAtCapture
         val retouch = autoRetouch
+        val natural = naturalProfile
         processingExecutor.execute {
             uri.lastPathSegment?.let { id -> if (sc != null) taste.rememberScene(id, sc) }
-            if (retouch && runCatching { Editor.autoRetouch(context, uri, taste.core, sc ?: TasteCore.ALL) }.getOrDefault(false)) refreshThumbnail(uri)
+            if (runCatching { Editor.finishPhoto(context, uri, taste.core, sc ?: TasteCore.ALL, natural, retouch) }.getOrDefault(false)) refreshThumbnail(uri)
         }
     }
 
@@ -189,6 +195,9 @@ class CameraEngine(private val context: Context) {
     var autoPortrait: Boolean = true
     /** Retoque natural por zonas (cielo, piel, vegetación) en cada foto. */
     var autoRetouch: Boolean = false
+    /** Perfil natural: curva de tono profesional en la cámara y color sin saturar en cada foto. */
+    var naturalProfile: Boolean = true
+        set(v) { if (field != v) { field = v; applyControls() } }
     val taste = TasteStore(context)
     /** Progreso de una toma múltiple ("Tomando 3/8"…), null si no hay. */
     var burstStatus by mutableStateOf<String?>(null)
@@ -607,6 +616,10 @@ class CameraEngine(private val context: Context) {
         val step = exposure.exposureCompensationStep.toFloat().takeIf { it > 0f } ?: (1f / 3f)
         val evRange = exposure.exposureCompensationRange
         val aperture = c2.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_APERTURES)?.firstOrNull() ?: 0f
+        val toneModes = c2.getCameraCharacteristic(CameraCharacteristics.TONEMAP_AVAILABLE_TONE_MAP_MODES) ?: IntArray(0)
+        val curvePoints = c2.getCameraCharacteristic(CameraCharacteristics.TONEMAP_MAX_CURVE_POINTS) ?: 0
+        val edgeModes = c2.getCameraCharacteristic(CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES) ?: IntArray(0)
+        val nrModes = c2.getCameraCharacteristic(CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES) ?: IntArray(0)
 
         caps = SensorCaps(
             isoValues = isoRange?.let { ExposureMath.isoValues(it.lower, it.upper) } ?: emptyList(),
@@ -620,6 +633,10 @@ class CameraEngine(private val context: Context) {
             manualFocus = minFocus > 0f,
             hasFlash = cam.cameraInfo.hasFlashUnit(),
             aperture = aperture,
+            toneCurve = CameraMetadata.TONEMAP_MODE_CONTRAST_CURVE in toneModes && curvePoints >= 32,
+            maxCurvePoints = curvePoints,
+            edgeFast = CameraMetadata.EDGE_MODE_FAST in edgeModes,
+            noiseHq = CameraMetadata.NOISE_REDUCTION_MODE_HIGH_QUALITY in nrModes,
         )
     }
 
@@ -732,6 +749,7 @@ class CameraEngine(private val context: Context) {
                     .setCaptureRequestOption(CaptureRequest.SENSOR_FRAME_DURATION, maxOf(shutter, 33_333_333L))
                     .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK, true)
                     .also { o ->
+                        o.addNatural()
                         // Astro: enfoque fijo al infinito (las estrellas).
                         burstFocus?.takeIf { caps.manualFocus }?.let {
                             o.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
@@ -758,7 +776,7 @@ class CameraEngine(private val context: Context) {
                 return
             }
             if (!brainActive) {
-                c2.clearCaptureRequestOptions()
+                c2.setCaptureRequestOptions(CaptureRequestOptions.Builder().also { it.addNatural() }.build())
                 cam.cameraControl.setExposureCompensationIndex(0)
                 return
             }
@@ -806,9 +824,30 @@ class CameraEngine(private val context: Context) {
     }
 
     private fun CaptureRequestOptions.Builder.addBurstLock() {
+        addNatural()
         if (!burstLock) return
         setCaptureRequestOption(CaptureRequest.CONTROL_AE_LOCK, true)
         setCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK, true)
+    }
+
+    /**
+     * Perfil natural del S22+: curva de tono con hombro suave en las altas luces (calibrada con la
+     * edición de fotógrafos profesionales: el cielo no se quema de golpe), menos realce artificial
+     * de bordes y reducción de ruido de alta calidad. Solo si el sensor acepta cada control.
+     */
+    private fun CaptureRequestOptions.Builder.addNatural() {
+        if (!naturalProfile) return
+        if (caps.toneCurve) {
+            setCaptureRequestOption(CaptureRequest.TONEMAP_MODE, CameraMetadata.TONEMAP_MODE_CONTRAST_CURVE)
+            setCaptureRequestOption(CaptureRequest.TONEMAP_CURVE, naturalCurve)
+        }
+        if (caps.edgeFast) setCaptureRequestOption(CaptureRequest.EDGE_MODE, CameraMetadata.EDGE_MODE_FAST)
+        if (caps.noiseHq) setCaptureRequestOption(CaptureRequest.NOISE_REDUCTION_MODE, CameraMetadata.NOISE_REDUCTION_MODE_HIGH_QUALITY)
+    }
+
+    private val naturalCurve: android.hardware.camera2.params.TonemapCurve by lazy {
+        val pts = com.iacamara.app.processing.Calibration.toneCurvePoints()
+        android.hardware.camera2.params.TonemapCurve(pts, pts, pts)
     }
 
     /**
@@ -843,8 +882,9 @@ class CameraEngine(private val context: Context) {
         } else {
             val vals = caps.shutterValues
             if (vals.isEmpty()) return
-            // A pulso no conviene bajar de 1/15 s aunque falte luz.
-            val maxHandheld = minOf(vals.last(), 66_666_666L)
+            // A pulso: el límite depende del lente (con estabilizador óptico se puede ir más lento).
+            val spec = S22Plus.specForFactor((activeLens?.baseFactor ?: 1f) * zoomRatio, useFront)
+            val maxHandheld = minOf(vals.last(), if (spec.ois) 125_000_000L else 66_666_666L)
             priorityShutterNs = (priorityShutterNs * adjust).toLong().coerceIn(vals.first(), maxHandheld)
         }
         applyControls()
@@ -882,6 +922,7 @@ class CameraEngine(private val context: Context) {
                 subjectLuma = if (subject != null) st.subjectLuma else null,
                 snowy = snowy, p98 = st.p98, imageMotion = imageMotion,
                 zoomFactor = (activeLens?.baseFactor ?: 1f) * zoomRatio,
+                front = useFront,
             ),
             engagedBefore,
         )
@@ -919,10 +960,19 @@ class CameraEngine(private val context: Context) {
         val currentFactor = current.baseFactor * zoomRatio
         val candidates = lenses.filter { it.factor <= 3.5f }
         val targetFactor = lensPolicy.decide(sc, scene?.confidence ?: 0f, lastLensDecision, currentFactor, candidates.map { it.factor }) ?: return
-        val target = candidates.minByOrNull { abs(it.factor - targetFactor) } ?: return
+        var target = candidates.minByOrNull { abs(it.factor - targetFactor) } ?: return
+        // S22+: con poca luz el teleobjetivo (f/2.4, sensor 1/3.94") pierde contra un recorte 3×
+        // del principal (f/1.8, sensor 1/1.56"): se usa el principal con zoom, como hace Samsung.
+        var cropNote = ""
+        if (target.factor >= 2.9f && !target.digital && S22Plus.preferMainCropOverTele(live.iso)) {
+            lenses.firstOrNull { it.baseFactor == 1f && it.zoom == 1f }?.let { main ->
+                target = Lens(main.cameraId, target.factor, 1f, (main.equivalentMm * target.factor).roundToInt(), digital = true)
+                cropNote = " · RECORTE DEL PRINCIPAL (MÁS LUZ)"
+            }
+        }
         lensBeforeAuto = current
         selectLens(target, byUser = false)
-        lensNotice = "LENTE ${target.label}× · ${sc.shortTitle().uppercase()}"
+        lensNotice = "LENTE ${target.label}× · ${sc.shortTitle().uppercase()}$cropNote"
     }
 
     fun undoAutoLens() {

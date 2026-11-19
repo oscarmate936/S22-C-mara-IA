@@ -1,6 +1,7 @@
 package com.iacamara.app.ai
 
 import com.iacamara.app.camera.ExposureMath
+import com.iacamara.app.camera.S22Plus
 import com.iacamara.app.camera.WhiteBalance
 import kotlin.math.abs
 import kotlin.math.atan
@@ -45,6 +46,8 @@ class BrainInput(
     val imageMotion: Float = 0f,
     /** Factor de lente/zoom actual (1 = principal sin zoom). */
     val zoomFactor: Float = 1f,
+    /** Cámara frontal. */
+    val front: Boolean = false,
 )
 
 class BrainDecision(
@@ -93,7 +96,8 @@ class PhotoBrain(private val clock: () -> Long = { System.currentTimeMillis() })
         var targetEv = when {
             // Nieve: "exponer a la derecha" — subir hasta que lo más claro quede justo sin quemarse.
             i.snowy -> (smoothEv + 2.2f * log2(SNOW_WHITE / i.p98.coerceIn(0.05f, 1f))).coerceIn(0.3f, 2f)
-            else -> i.scene.recipe?.ev ?: 0f
+            // Exposición de la escena calibrada con fotógrafos profesionales (FiveK); si no hay datos, la receta.
+            else -> com.iacamara.app.processing.Calibration.SCENE_EV[i.scene.name] ?: i.scene.recipe?.ev ?: 0f
         }
         var evWhy = if (i.snowy) "la nieve debe verse blanca, no gris" else evReason(i.scene)
 
@@ -136,6 +140,14 @@ class PhotoBrain(private val clock: () -> Long = { System.currentTimeMillis() })
                 evWhy = "protejo el cielo y las luces grandes"
             }
         }
+        // 3b) Altas luces "de profesional": aunque no se queme una zona grande, si lo más claro de la
+        //     escena pasa del nivel en que los fotógrafos lo dejan (medido en FiveK), se baja un poco.
+        //     Así un cielo luminoso o un atardecer no salen "lavados" como en el automático del teléfono.
+        val ceil = com.iacamara.app.processing.Calibration.HIGHLIGHT_CEIL[i.scene.name]
+        if (ceil != null && !i.snowy && !protecting && !(subjectActive && subj!!.isFace) && i.p98 > ceil) {
+            val down = (2.2f * log2(i.p98 / ceil)).coerceIn(0f, 0.7f)
+            if (down >= 0.15f) { targetEv -= down; evWhy = "luces al nivel de un profesional (sin quemar)" }
+        }
         // 4) Contraste que el sensor no abarca: cielo quemado Y sombras profundas a la vez.
         if (i.clippedArea > BIG_CLIP && i.shadowArea > 0.08f && i.scene != Scene.NIGHT) hdr = true
         // Amanecer/atardecer: si el resplandor del horizonte se quema, el HDR recupera su color.
@@ -163,7 +175,11 @@ class PhotoBrain(private val clock: () -> Long = { System.currentTimeMillis() })
         fun limit(t: Double, why: String) { if (t < maxT) { maxT = t; shutterWhy = why } }
 
         val hfov = 2.0 * atan(18.0 / i.equivalentMm.coerceAtLeast(8f)) // radianes
-        if (!i.steady) limit(1.0 / (2.0 * i.equivalentMm), "regla de pulso a ${i.equivalentMm.toInt()} mm")
+        // Regla de pulso del lente real del S22+: el principal y el tele tienen estabilizador óptico
+        // (≈2 pasos más lento sin que salga movida); el ultra gran angular y la frontal no.
+        val spec = S22Plus.specForFactor(i.zoomFactor, i.front)
+        val handheld = S22Plus.slowestHandheld(spec, i.equivalentMm)
+        if (!i.steady) limit(handheld, if (spec.ois) "pulso a ${i.equivalentMm.toInt()} mm con estabilizador óptico" else "regla de pulso a ${i.equivalentMm.toInt()} mm")
         when (i.scene) {
             Scene.PET -> limit(1.0 / 500, "congela a tu mascota")
             Scene.ANIMAL -> limit(1.0 / 1000, "congela el movimiento")
@@ -201,7 +217,7 @@ class PhotoBrain(private val clock: () -> Long = { System.currentTimeMillis() })
                     var t = wanted
                     if (i.priorityIso >= i.isoMax * 0.95f) {
                         // Falta luz: un fotógrafo cede un poco de velocidad antes que llenar de ruido.
-                        t = (wanted * 2).coerceAtMost((1e9 / (2.0 * i.equivalentMm)).toLong().coerceAtLeast(wanted))
+                        t = (wanted * 2).coerceAtMost((1e9 * handheld).toLong().coerceAtLeast(wanted))
                         shutterWhy = "poca luz: equilibrio entre nitidez y ruido"
                     }
                     snap(t, i.shutterValues)
