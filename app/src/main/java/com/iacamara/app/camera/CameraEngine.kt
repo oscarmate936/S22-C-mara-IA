@@ -17,6 +17,11 @@ import android.provider.MediaStore
 import android.util.Log
 import android.util.Size
 import android.view.Surface
+import com.iacamara.app.ai.Scene
+import com.iacamara.app.ai.SceneBrain
+import com.iacamara.app.ai.SceneDetector
+import com.iacamara.app.ai.SceneResult
+import com.iacamara.app.ai.Subject
 import androidx.camera.camera2.interop.Camera2CameraControl
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
@@ -69,6 +74,8 @@ data class Lens(
     val zoom: Float,
     val baseFactor: Float,
     val equivalentMm: Int,
+    /** true si es zoom digital (recorte) y no un lente físico. */
+    val digital: Boolean = false,
 ) {
     val factor: Float get() = baseFactor * zoom
     val label: String get() = if (factor >= 1.5f) "${factor.roundToInt()}" else formatFactor(factor)
@@ -144,6 +151,24 @@ class CameraEngine(private val context: Context) {
     var evCompensation by mutableFloatStateOf(0f)
         private set
 
+    // ---------------- IA (fase 2) ----------------
+    /** Escena reconocida por la IA (null si la IA está apagada). */
+    var scene by mutableStateOf<SceneResult?>(null)
+        private set
+    /** Sujeto principal en el visor (rostro u objeto), coordenadas 0..1. */
+    var subject by mutableStateOf<Subject?>(null)
+        private set
+    /** Escena cuya receta profesional está aplicada ahora. */
+    var appliedScene by mutableStateOf<Scene?>(null)
+        private set
+    var aiEnabled: Boolean = true
+        set(v) {
+            field = v
+            if (!v) { scene = null; subject = null }
+        }
+    /** Enfocar solo al sujeto que detecta la IA. */
+    var subjectFocus: Boolean = true
+
     /** Lectura del fotómetro en pasos (exposición medida vs. ideal) cuando todo es manual. */
     var meterStops by mutableFloatStateOf(0f)
         private set
@@ -165,6 +190,14 @@ class CameraEngine(private val context: Context) {
     private var priorityIso = 100
     private var priorityShutterNs = 10_000_000L
     private var lastPriorityApply = 0L
+
+    private val detector by lazy { SceneDetector(analysisExecutor) }
+    private val brain = SceneBrain()
+    private var lastAi = 0L
+    private var lastUserTap = 0L
+    private var lastAutoFocus = 0L
+    private var lastFocusX = -1f
+    private var lastFocusY = -1f
 
     fun bind(owner: LifecycleOwner, view: PreviewView) {
         lifecycleOwner = owner
@@ -199,6 +232,17 @@ class CameraEngine(private val context: Context) {
         return focal * 43.27f / diag
     }
 
+    /** Rango de zoom de una cámara, leído del sensor (disponible antes de abrirla). */
+    private fun zoomRange(info: CameraInfo): Pair<Float, Float> {
+        info.zoomState.value?.let { return it.minZoomRatio to it.maxZoomRatio }
+        val c2 = Camera2CameraInfo.from(info)
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            c2.getCameraCharacteristic(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)?.let { return it.lower to it.upper }
+        }
+        val digital = c2.getCameraCharacteristic(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1f
+        return 1f to digital
+    }
+
     /**
      * Descubre los lentes traseros. En el S22+ Samsung expone gran angular, ultra gran angular
      * y teleobjetivo como cámaras separadas; si un teléfono no lo hace, usamos el zoom de la principal.
@@ -229,14 +273,28 @@ class CameraEngine(private val context: Context) {
                     }
                 }
             // Respaldo: lentes "virtuales" con el zoom de la cámara principal (cámara lógica).
-            val zoom = mainInfo.zoomState.value
-            val minZoom = zoom?.minZoomRatio ?: 1f
-            val maxZoom = zoom?.maxZoomRatio ?: 1f
+            val (minZoom, maxZoom) = zoomRange(mainInfo)
             if (result.none { it.factor < 0.9f } && minZoom < 0.9f) {
                 result += Lens(mainId, minZoom, 1f, (mainEquivalentMm * minZoom).roundToInt())
             }
             if (result.none { it.factor > 1.9f } && maxZoom >= 3f) {
                 result += Lens(mainId, 3f, 1f, (mainEquivalentMm * 3f).roundToInt())
+            }
+            // Paradas de zoom como en la cámara de Samsung:
+            // 2× = recorte central del sensor de 50 MP (mantiene muy buena calidad).
+            if (result.none { abs(it.factor - 2f) < 0.4f } && maxZoom >= 2f) {
+                result += Lens(mainId, 2f, 1f, (mainEquivalentMm * 2f).roundToInt(), digital = true)
+            }
+            // 10× = teleobjetivo + recorte (o la principal si no hay tele).
+            val tele = result.filter { it.zoom == 1f && it.baseFactor > 1.5f }.maxByOrNull { it.baseFactor }
+            val teleMax = tele?.let { t ->
+                infos.firstOrNull { Camera2CameraInfo.from(it).cameraId == t.cameraId }?.let { zoomRange(it).second }
+            } ?: 0f
+            if (tele != null && tele.baseFactor * teleMax >= 10f) {
+                val z = 10f / tele.baseFactor
+                result += Lens(tele.cameraId, z, tele.baseFactor, (tele.equivalentMm * z).roundToInt(), digital = true)
+            } else if (maxZoom >= 10f) {
+                result += Lens(mainId, 10f, 1f, (mainEquivalentMm * 10f).roundToInt(), digital = true)
             }
         }
         lenses = result.sortedBy { it.factor }
@@ -318,7 +376,13 @@ class CameraEngine(private val context: Context) {
                     .build(),
             )
             .build()
-        analysis.setAnalyzer(analysisExecutor, FrameAnalyzer { s -> mainHandler.post { onFrameStats(s) } })
+        analysis.setAnalyzer(
+            analysisExecutor,
+            FrameAnalyzer(
+                onStats = { s -> mainHandler.post { onFrameStats(s) } },
+                handOff = { img -> handToAi(img) },
+            ),
+        )
 
         val cameraSelector = CameraSelector.Builder()
             .addCameraFilter { infos -> infos.filter { Camera2CameraInfo.from(it).cameraId == lens.cameraId } }
@@ -385,7 +449,7 @@ class CameraEngine(private val context: Context) {
     fun switchMode(m: CaptureMode) {
         if (m == mode) return
         mode = m
-        if (m == CaptureMode.AUTO) selectedParam = null
+        if (m == CaptureMode.AUTO) { selectedParam = null; appliedScene = null }
         applyControls()
     }
 
@@ -429,6 +493,7 @@ class CameraEngine(private val context: Context) {
         manualFocus = null
         whiteBalance = WhiteBalance.AUTO
         evCompensation = 0f
+        appliedScene = null
         applyControls()
     }
 
@@ -509,6 +574,67 @@ class CameraEngine(private val context: Context) {
         applyControls()
     }
 
+    // ---------------- IA de escena y sujeto ----------------
+
+    /** Corre en el hilo de análisis: decide si este fotograma va a la IA (~3 por segundo). */
+    private fun handToAi(img: androidx.camera.core.ImageProxy): Boolean {
+        if (!aiEnabled || detector.busy) return false
+        val now = System.currentTimeMillis()
+        if (now - lastAi < 330) return false
+        lastAi = now
+        val mirror = useFront
+        detector.process(img, mirror) { d -> mainHandler.post { onDetection(d) } }
+        return true
+    }
+
+    private fun onDetection(d: com.iacamara.app.ai.Detection) {
+        if (!aiEnabled) return
+        val (result, subj) = brain.update(d, stats, live, useFront)
+        scene = result
+        subject = subj
+        if (appliedScene != null && appliedScene != result.scene && result.scene != Scene.GENERAL) appliedScene = null
+        subj?.let { focusOnSubject(it) }
+    }
+
+    /** Como un fotógrafo: el foco sigue al sujeto (rostro primero) sin que toques la pantalla. */
+    private fun focusOnSubject(s: Subject) {
+        val cam = camera ?: return
+        val view = previewView ?: return
+        if (!subjectFocus || aeAfLocked || manualFocus != null) return
+        val now = System.currentTimeMillis()
+        if (now - lastUserTap < 5000 || now - lastAutoFocus < 2500) return
+        val moved = abs(s.anchorX - lastFocusX) + abs(s.anchorY - lastFocusY)
+        if (moved < 0.08f && now - lastAutoFocus < 8000) return
+        if (view.width == 0 || view.height == 0) return
+        lastAutoFocus = now
+        lastFocusX = s.anchorX
+        lastFocusY = s.anchorY
+        val point = view.meteringPointFactory.createPoint(s.box.centerX() * view.width, s.anchorY * view.height, 0.12f)
+        val flags = if (sensorManual) FocusMeteringAction.FLAG_AF else FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
+        cam.cameraControl.startFocusAndMetering(
+            FocusMeteringAction.Builder(point, flags).setAutoCancelDuration(3, TimeUnit.SECONDS).build(),
+        )
+    }
+
+    /** Aplica la receta profesional de la escena: lente, exposición, blancos y velocidad. */
+    fun applyRecipe(s: Scene) {
+        val r = s.recipe ?: return
+        mode = CaptureMode.PRO
+        selectedParam = null
+        manualIso = null
+        manualFocus = null
+        whiteBalance = r.wb
+        evCompensation = caps.evValues.minByOrNull { abs(it - r.ev) } ?: 0f
+        manualShutterNs = if (r.shutterNs != null && caps.manualSensor) {
+            priorityIso = live.iso.takeIf { it > 0 } ?: priorityIso
+            caps.shutterValues.minByOrNull { ExposureMath.logDistance(it, r.shutterNs) }
+        } else null
+        appliedScene = s
+        val lens = r.lensFactor?.let { f -> lenses.minByOrNull { abs(kotlin.math.ln(it.factor / f)) } }
+        if (lens != null && lens != activeLens) selectLens(lens)
+        applyControls()
+    }
+
     // ---------------- Enfoque ----------------
 
     fun tapToFocus(point: MeteringPoint, lock: Boolean) {
@@ -517,6 +643,7 @@ class CameraEngine(private val context: Context) {
         val builder = FocusMeteringAction.Builder(point, flags)
         if (lock) builder.disableAutoCancel() else builder.setAutoCancelDuration(4, TimeUnit.SECONDS)
         if (manualFocus != null) setFocus(null)
+        lastUserTap = System.currentTimeMillis()
         cam.cameraControl.startFocusAndMetering(builder.build())
         aeAfLocked = lock
     }
@@ -578,7 +705,10 @@ class CameraEngine(private val context: Context) {
     /** Estado de ejemplo para capturas de pantalla de la interfaz (sin cámara real). */
     @androidx.annotation.VisibleForTesting
     fun loadDemoState(pro: Boolean) {
-        lenses = listOf(Lens("2", 1f, 0.55f, 13), Lens("0", 1f, 1f, 24), Lens("3", 1f, 2.9f, 69))
+        lenses = listOf(
+            Lens("2", 1f, 0.55f, 13), Lens("0", 1f, 1f, 24), Lens("0", 2f, 1f, 48, digital = true),
+            Lens("3", 1f, 2.9f, 69), Lens("3", 3.45f, 2.9f, 238, digital = true),
+        )
         activeLens = lenses[1]
         caps = SensorCaps(
             isoValues = ExposureMath.isoValues(50, 3200),
@@ -590,6 +720,8 @@ class CameraEngine(private val context: Context) {
         live = LiveExposure(125, 4_000_000L, 0.4f)
         val hist = FloatArray(64) { i -> val x = (i - 28) / 12f; (kotlin.math.exp(-x * x) * 0.9f + 0.08f).toFloat() }
         stats = FrameStats(hist, 0.45f, 0.01f, 0.0f)
+        scene = SceneResult(Scene.PORTRAIT, 0.92f, listOf("rostro"))
+        subject = Subject(android.graphics.RectF(0.42f, 0.30f, 0.70f, 0.52f), "Persona", true)
         if (pro) {
             mode = CaptureMode.PRO
             manualShutterNs = 4_000_000L

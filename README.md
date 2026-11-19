@@ -14,7 +14,7 @@ Una app de cámara profesional para el **Samsung Galaxy S22+**. Te da control ma
 
 Cada cambio que se sube al repositorio vuelve a compilar el APK automáticamente.
 
-## Qué hace (fase 1)
+## Qué hace
 
 | Zona | Función |
 |---|---|
@@ -22,8 +22,13 @@ Cada cambio que se sube al repositorio vuelve a compilar el APK automáticamente
 | **Tira de instrumentos** | ISO, obturación, blancos, enfoque, exposición y apertura **en vivo**. Punto cian = lo decide la cámara. Ámbar = lo fijaste tú. Toca cualquiera para ajustarla. |
 | **Visor** | Guías (tercios, áurea, centro), nivel de horizonte que se pone verde, histograma, aviso de altas luces |
 | **Gestos** | Tocar = enfocar y medir. Mantener = bloqueo AE/AF. Pellizcar = zoom. Botones de volumen = disparar. |
-| **Lentes** | 0.6× · 1× · 3× (las cámaras físicas reales del S22+), con su distancia focal equivalente en mm |
+| **Lentes** | 0.6× · 1× · 3× son los tres lentes físicos del S22+. 2× (recorte del sensor de 50 MP) y 10× (tele + recorte) son accesos de zoom digital, como en la cámara de Samsung. Muestra la focal equivalente en mm. |
 | **Modo PRO** | Dial tipo regla con vibración en cada paso y una explicación corta de qué hace cada ajuste. Si fijas solo el ISO o solo la velocidad, la app calcula el otro valor con su propio fotómetro (prioridad ISO o prioridad obturación). |
+
+| **IA de escena** (fase 2) | Reconoce retrato, mascota, animal, macro, atardecer, playa, paisaje, ciudad, comida y noche. Combina tres modelos de Google ML Kit (en el teléfono y sin internet) con datos físicos: luz, color y distancia de enfoque. |
+| **Sujeto y enfoque** | Recuadro cian sobre el rostro o el sujeto principal. El enfoque y la medición de luz lo siguen solos. |
+| **Entrenador de composición** | Línea guía hacia el punto fuerte de los tercios (con los ojos como referencia en retratos), o la línea donde poner el horizonte. Se pone verde y vibra al quedar bien compuesto. |
+| **Receta profesional** | Toca **AJUSTAR** y la app aplica lo que haría un fotógrafo para esa escena: lente, velocidad, exposición y blancos. Toca el nombre de la escena para ver los consejos. |
 
 Las fotos se guardan en **Imágenes › IA Camara**.
 
@@ -40,8 +45,8 @@ Paleta negro tinta con paneles de vidrio. El ámbar marca la acción y los valor
 ## Hoja de ruta
 
 1. ✅ Control manual total, lentes, guías y diseño
-2. ⏳ IA en el teléfono (ML Kit / MediaPipe): reconocer escena y sujeto
-3. ⏳ "Cerebro fotógrafo": ajustes expertos automáticos según la escena
+2. ✅ IA en el teléfono (ML Kit): reconocer escena y sujeto, entrenador de composición
+3. ⏳ "Cerebro fotógrafo": aplicar las recetas solo y de forma continua, sin tocar nada
 4. ⏳ RAW, apilado multi‑foto, macro con *focus stacking* y modo noche o trípode
 
 ## Desarrollo

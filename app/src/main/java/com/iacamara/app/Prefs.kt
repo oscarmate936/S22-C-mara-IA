@@ -21,6 +21,12 @@ class Prefs(context: Context) {
         private set
     var haptics by mutableStateOf(sp.getBoolean("haptics", true))
         private set
+    var aiScene by mutableStateOf(sp.getBoolean("aiScene", true))
+        private set
+    var coach by mutableStateOf(sp.getBoolean("coach", true))
+        private set
+    var subjectFocus by mutableStateOf(sp.getBoolean("subjectFocus", true))
+        private set
     var timerSeconds by mutableStateOf(sp.getInt("timer", 0))
         private set
 
@@ -30,6 +36,9 @@ class Prefs(context: Context) {
     fun updateHistogram(v: Boolean) { histogram = v; sp.edit().putBoolean("histogram", v).apply() }
     fun updateHighlightWarning(v: Boolean) { highlightWarning = v; sp.edit().putBoolean("highlights", v).apply() }
     fun updateHaptics(v: Boolean) { haptics = v; sp.edit().putBoolean("haptics", v).apply() }
+    fun updateAiScene(v: Boolean) { aiScene = v; sp.edit().putBoolean("aiScene", v).apply() }
+    fun updateCoach(v: Boolean) { coach = v; sp.edit().putBoolean("coach", v).apply() }
+    fun updateSubjectFocus(v: Boolean) { subjectFocus = v; sp.edit().putBoolean("subjectFocus", v).apply() }
     fun cycleTimer() {
         timerSeconds = when (timerSeconds) { 0 -> 3; 3 -> 10; else -> 0 }
         sp.edit().putInt("timer", timerSeconds).apply()

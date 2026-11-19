@@ -12,8 +12,10 @@ android {
         applicationId = "com.iacamara.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+        // Solo procesadores ARM de 64 bits (todos los Galaxy modernos, incluido el S22+): APK mucho más liviano.
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     buildTypes {
@@ -61,6 +63,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
+
+    // IA en el teléfono (Google ML Kit, modelos incluidos en la app: funcionan sin internet).
+    implementation("com.google.mlkit:image-labeling:17.0.9")
+    implementation("com.google.mlkit:face-detection:16.1.7")
+    implementation("com.google.mlkit:object-detection:17.0.2")
 
     // Capturas de pantalla de la interfaz en la JVM (sin teléfono).
     testImplementation("junit:junit:4.13.2")

@@ -86,6 +86,10 @@ import com.iacamara.app.camera.FlashSetting
 import com.iacamara.app.camera.Param
 import com.iacamara.app.camera.WhiteBalance
 import com.iacamara.app.sensors.DeviceSensors
+import com.iacamara.app.ai.CompositionGoal
+import com.iacamara.app.ui.components.CompositionCoach
+import com.iacamara.app.ui.components.SceneChip
+import com.iacamara.app.ui.components.SubjectBox
 import com.iacamara.app.ui.components.BarIconButton
 import com.iacamara.app.ui.components.BarTextButton
 import com.iacamara.app.ui.components.ChoiceChip
@@ -129,6 +133,7 @@ fun CameraScreen(
     }
 
     var showSettings by remember { mutableStateOf(false) }
+    var showScene by remember { mutableStateOf(false) }
     var countdown by remember { mutableIntStateOf(0) }
     var reticle by remember { mutableStateOf<Offset?>(null) }
     var reticleKey by remember { mutableIntStateOf(0) }
@@ -154,6 +159,10 @@ fun CameraScreen(
         }
     }
     LaunchedEffect(sensors.surfaceRotation) { engine.setRotation(sensors.surfaceRotation) }
+    LaunchedEffect(prefs.aiScene, prefs.subjectFocus) {
+        engine.aiEnabled = prefs.aiScene
+        engine.subjectFocus = prefs.subjectFocus
+    }
 
     fun shoot() {
         if (countdown > 0 || engine.isCapturing) return
@@ -229,6 +238,12 @@ fun CameraScreen(
             if (prefs.level) LevelIndicator(sensors.tilt, sensors.isFlat, prefs.haptics)
             ProFrame(pro)
             reticle?.let { FocusReticle(it, engine.aeAfLocked, reticleKey) }
+            if (prefs.aiScene) {
+                if (prefs.coach && countdown == 0) {
+                    CompositionCoach(engine.subject, engine.scene?.scene?.goal ?: CompositionGoal.NONE, prefs.haptics)
+                }
+                SubjectBox(engine.subject)
+            }
 
             // Indicadores superiores del visor
             Column(
@@ -240,8 +255,22 @@ fun CameraScreen(
                     InfoPill("ALTAS LUCES", Palette.Signal, Icons.Rounded.WbSunny, Modifier.padding(top = 8.dp))
                 }
             }
+            // Escena detectada por la IA (arriba a la derecha)
+            if (prefs.aiScene) {
+                Box(Modifier.align(Alignment.TopEnd).padding(top = if (wide) headerHeight + 10.dp else 12.dp, end = 12.dp)) {
+                    SceneChip(
+                        engine.scene,
+                        applied = engine.appliedScene != null && engine.appliedScene == engine.scene?.scene,
+                        onOpen = { showScene = true },
+                        onApply = {
+                            engine.scene?.scene?.let(engine::applyRecipe)
+                            if (prefs.haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        },
+                    )
+                }
+            }
             Column(
-                Modifier.align(Alignment.TopCenter).padding(top = if (wide) headerHeight + 10.dp else 12.dp),
+                Modifier.align(Alignment.TopCenter).padding(top = if (wide) headerHeight + 58.dp else 60.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 AnimatedVisibility(engine.aeAfLocked, enter = fadeIn() + slideInVertically(), exit = fadeOut()) {
@@ -337,6 +366,15 @@ fun CameraScreen(
         }
 
         if (showSettings) SettingsSheet(prefs) { showSettings = false }
+        val sceneNow = engine.scene
+        if (showScene && sceneNow != null) {
+            SceneSheet(
+                sceneNow,
+                applied = engine.appliedScene == sceneNow.scene,
+                onApply = { engine.applyRecipe(sceneNow.scene) },
+                onDismiss = { showScene = false },
+            )
+        }
     }
 }
 

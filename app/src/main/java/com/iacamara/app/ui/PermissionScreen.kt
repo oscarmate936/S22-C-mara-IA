@@ -82,7 +82,7 @@ fun PermissionScreen(permanentlyDenied: Boolean, onRequest: () -> Unit) {
             Spacer(Modifier.height(32.dp))
             Feature(Icons.Rounded.Tune, "Control total", "ISO, obturación, blancos y enfoque, con diales precisos.")
             Feature(Icons.Rounded.GridOn, "Composición guiada", "Guías, nivel de horizonte e histograma en vivo.")
-            Feature(Icons.Rounded.AutoAwesome, "Inteligencia en camino", "Pronto: la IA reconoce la escena y ajusta todo por ti.")
+            Feature(Icons.Rounded.AutoAwesome, "IA que entiende la escena", "Reconoce lo que fotografías, sigue al sujeto y te dice cómo componer.")
             Spacer(Modifier.weight(1f))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
