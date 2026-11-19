@@ -70,6 +70,16 @@ object Editor {
         return out
     }
 
+    /**
+     * Carga una foto de la galería DERECHA y nítida, con el lado mayor ≤ [side]. No se usa la
+     * miniatura del sistema: en algunos teléfonos (S22) viene sin girar según la orientación EXIF
+     * y a baja resolución, y la foto se veía de lado y borrosa.
+     */
+    fun load(context: Context, uri: Uri, side: Int): Bitmap? = runCatching {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+        decodeUpright(bytes, side)
+    }.getOrNull()
+
     /** Rostros (normalizados) con ojos abiertos, para la piel y la calificación. */
     fun faces(bmp: Bitmap): List<FaceObs> {
         val det = FaceDetection.getClient(

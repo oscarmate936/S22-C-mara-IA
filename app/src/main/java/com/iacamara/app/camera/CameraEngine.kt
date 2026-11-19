@@ -161,7 +161,7 @@ class CameraEngine(private val context: Context) {
     fun refreshThumbnail(uri: Uri) {
         if (uri != lastPhotoUri) return
         analysisExecutor.execute {
-            val t = runCatching { context.contentResolver.loadThumbnail(uri, Size(240, 240), null) }.getOrNull()
+            val t = Editor.load(context, uri, 240)
             mainHandler.post { if (t != null && uri == lastPhotoUri) lastPhoto = t }
         }
     }
@@ -1084,7 +1084,7 @@ class CameraEngine(private val context: Context) {
                 if (uri != null && context.contentResolver.getType(uri)?.contains("jpeg") == true) {
                     lastPhotoUri = uri; onPhotoSaved(uri)
                     analysisExecutor.execute {
-                        val thumb = runCatching { context.contentResolver.loadThumbnail(uri, Size(240, 240), null) }.getOrNull()
+                        val thumb = Editor.load(context, uri, 240)
                         mainHandler.post { if (thumb != null) lastPhoto = thumb }
                     }
                 }
@@ -1321,7 +1321,7 @@ class CameraEngine(private val context: Context) {
                         PortraitProcessor(context).process(frames.first(), rotation, (if (taste.enabled) taste.core.portraitStrength(PortraitProcessor.DEFAULT_STRENGTH) else PortraitProcessor.DEFAULT_STRENGTH)) { msg -> mainHandler.post { burstStatus = msg } }
                     }.onFailure { Log.e(TAG, "Fallo en el retrato", it) }.getOrNull()
                     val uri = res?.uri
-                    val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
+                    val thumb = uri?.let { Editor.load(context, it, 240) }
                     mainHandler.post {
                         if (uri != null) {
                             lastPhotoUri = uri; onPhotoSaved(uri)
@@ -1340,7 +1340,7 @@ class CameraEngine(private val context: Context) {
                         MomentProcessor(context).process(frames, rotation, previous) { msg -> mainHandler.post { burstStatus = msg } }
                     }.onFailure { Log.e(TAG, "Fallo al elegir el momento", it) }.getOrNull()
                     val uri = res?.uri
-                    val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
+                    val thumb = uri?.let { Editor.load(context, it, 240) }
                     mainHandler.post {
                         if (uri != null) {
                             lastPhotoUri = uri; onPhotoSaved(uri)
@@ -1364,7 +1364,7 @@ class CameraEngine(private val context: Context) {
                         digitalZoom = digitalZoom,
                     ) { done, total -> mainHandler.post { burstStatus = "Combinando $done/$total…" } }
                 }.onFailure { Log.e(TAG, "Fallo al combinar", it) }.getOrNull()
-                val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
+                val thumb = uri?.let { Editor.load(context, it, 240) }
                 mainHandler.post {
                     if (uri != null) {
                         lastPhotoUri = uri; onPhotoSaved(uri)
@@ -1436,7 +1436,7 @@ class CameraEngine(private val context: Context) {
                 result.savedUri?.let { uri ->
                     lastPhotoUri = uri; onPhotoSaved(uri)
                     analysisExecutor.execute {
-                        val thumb = runCatching { context.contentResolver.loadThumbnail(uri, Size(240, 240), null) }.getOrNull()
+                        val thumb = Editor.load(context, uri, 240)
                         mainHandler.post { if (thumb != null) lastPhoto = thumb }
                     }
                 }

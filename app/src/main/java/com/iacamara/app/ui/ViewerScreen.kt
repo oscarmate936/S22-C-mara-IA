@@ -137,7 +137,7 @@ object Gallery {
     }
 
     fun bitmap(context: Context, uri: Uri, side: Int): Bitmap? =
-        runCatching { context.contentResolver.loadThumbnail(uri, Size(side, side), null) }.getOrNull()
+        Editor.load(context, uri, side)
 }
 
 /**
@@ -311,10 +311,15 @@ fun ViewerScreen(
 @Composable
 private fun ZoomablePhoto(photo: GalleryPhoto, version: Int, bitmapOverride: ((Uri) -> Bitmap?)?, onTap: () -> Unit) {
     val context = LocalContext.current
-    val bmp by produceState<Bitmap?>(null, photo.uri, version) {
-        value = bitmapOverride?.invoke(photo.uri) ?: withContext(Dispatchers.IO) { Gallery.bitmap(context, photo.uri, 2048) }
-    }
     var scale by remember(photo.uri) { mutableFloatStateOf(1f) }
+    // Al ampliar, se carga con más resolución para ver el detalle real.
+    val hiRes = scale > 1.6f
+    var bmp by remember(photo.uri, version) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(photo.uri, version, hiRes) {
+        if (hiRes && (bmp?.let { maxOf(it.width, it.height) } ?: 0) >= 4096) return@LaunchedEffect
+        val b = bitmapOverride?.invoke(photo.uri) ?: withContext(Dispatchers.IO) { Gallery.bitmap(context, photo.uri, if (hiRes) 4096 else 2048) }
+        if (b != null) bmp = b
+    }
     var ox by remember(photo.uri) { mutableFloatStateOf(0f) }
     var oy by remember(photo.uri) { mutableFloatStateOf(0f) }
     Box(
