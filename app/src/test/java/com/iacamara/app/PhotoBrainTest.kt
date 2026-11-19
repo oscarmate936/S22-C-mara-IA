@@ -141,4 +141,67 @@ class PhotoBrainTest {
         val d = PhotoBrain().decide(input(Scene.SUNSET, clippedArea = 0f, shadowArea = 0.3f, p98 = 0.85f), null)
         assertTrue(!d.hdr)
     }
+
+    /**
+     * Reproduce el video del amanecer: teléfono a pulso (temblor real, ruidoso) y el cielo
+     * quemado rondando el 3 %. 30 s a 2 decisiones por segundo, con el motor compensando el ISO.
+     */
+    @Test fun estabilidadAPulsoSinBombeo() {
+        val rnd = kotlin.random.Random(21)
+        var t = 0L
+        val b = PhotoBrain(clock = { t })
+        var engaged: Long? = null
+        var iso = 200
+        var shutterChanges = 0
+        var evChanges = 0
+        var brightnessJumps = 0
+        var lastEv = 0f
+        var lastExposure = 0.0
+        // Modelo del comportamiento anterior (sin márgenes ni compensación de ISO), para comparar.
+        var oldShutter: Long? = null
+        var oldChanges = 0
+        var oldJumps = 0
+        var oldIso = 200
+        var oldEvChanges = 0
+        var oldProtect = false
+        repeat(60) { k ->
+            val tremor = 0.05f + rnd.nextFloat() * 0.25f // anchos/s: el pulso nunca es constante
+            val clipped = 0.022f + rnd.nextFloat() * 0.016f // 2.2 %–3.8 %: ronda el umbral
+            val d = b.decide(
+                input(Scene.SUNSET, aeShutterNs = 1_000_000_000L / 100, clippedArea = clipped, p98 = 0.96f, iso = 200, priorityIso = iso).let { base ->
+                    BrainInput(
+                        scene = base.scene, subject = null, subjectSpeed = 0f, gyro = 0.01f, steady = false,
+                        equivalentMm = 23f, meanLuma = 0.4f, clippedHighlights = clipped, liveIso = 200,
+                        aeShutterNs = base.aeShutterNs, isoMin = 50, isoMax = 3200, priorityIso = iso,
+                        shutterValues = shutters, clippedArea = clipped, p98 = 0.96f, imageMotion = tremor,
+                    )
+                },
+                engaged,
+            )
+            // Motor: si cambia la velocidad, el ISO compensa al instante.
+            val newShutter = d.shutterNs
+            if (newShutter != null && engaged == null) iso = com.iacamara.app.camera.ExposureMath.keepExposure(200, 1_000_000_000L / 100, newShutter, 50, 3200)
+            else if (newShutter != null && engaged != null && newShutter != engaged) iso = com.iacamara.app.camera.ExposureMath.keepExposure(iso, engaged, newShutter, 50, 3200)
+            val exposure = iso.toDouble() * (newShutter ?: (1_000_000_000L / 100))
+            if (k > 0 && newShutter != engaged) shutterChanges++
+            if (k > 0 && kotlin.math.abs(kotlin.math.ln(exposure / lastExposure)) > 0.23) brightnessJumps++
+            if (k > 0 && kotlin.math.abs(d.ev - lastEv) > 0.01f) evChanges++
+            engaged = newShutter; lastExposure = exposure; lastEv = d.ev
+
+            // Comportamiento anterior: sigue cada variación del pulso y no compensa el ISO al cambiar.
+            val oldWanted = shutters.filter { it <= (0.002 / tremor * 1e9).toLong() }.maxOrNull()
+            if (k > 0 && oldWanted != oldShutter) { oldChanges++; if (oldShutter != null && oldWanted != null &&
+                kotlin.math.abs(kotlin.math.ln(oldShutter.toDouble() / oldWanted)) > 0.23) oldJumps++ }
+            oldShutter = oldWanted
+            val p = clipped > 0.03f
+            if (k > 0 && p != oldProtect) oldEvChanges++
+            oldProtect = p
+            t += 500
+        }
+        println("SIM | ESTABILIDAD 30 s a pulso — antes: velocidad cambió $oldChanges veces, $oldJumps saltos de brillo, protección del cielo encendida/apagada $oldEvChanges veces")
+        println("SIM | ESTABILIDAD 30 s a pulso — ahora: velocidad cambió $shutterChanges veces, $brightnessJumps saltos de brillo, ajustes de exposición $evChanges")
+        assertTrue("la velocidad no debe cambiar a cada rato ($shutterChanges)", shutterChanges <= 4)
+        assertEquals("el brillo no debe saltar", 0, brightnessJumps)
+        assertTrue("la exposición se asienta ($evChanges)", evChanges <= 6)
+    }
 }

@@ -62,13 +62,29 @@ class BrainDecision(
  * un profesional: velocidad según el movimiento real, exposición según la escena,
  * protección de altas luces, blancos y exposición larga si detecta trípode.
  */
-class PhotoBrain {
+class PhotoBrain(private val clock: () -> Long = { System.currentTimeMillis() }) {
     private var smoothEv = 0f
     private var lowIsoSince = 0L
+    /** Protección del cielo activa (con histéresis: entra al 3 %, sale por debajo del 1.5 %). */
+    private var protecting = false
+    /** Desde cuándo se pide una velocidad más lenta (se espera antes de hacerla). */
+    private var slowerSince = 0L
+    /** Desde cuándo ya no hace falta fijar la velocidad (se espera antes de soltarla). */
+    private var releaseSince = 0L
+    /** Picos recientes de movimiento (se olvidan en ~3 s): la velocidad se elige para lo peor del pulso. */
+    private var motionPeak = 0f
+    private var gyroPeak = 0f
+    private var lastDecide = 0L
 
     fun decide(i: BrainInput, engaged: Long?): BrainDecision {
         val reasons = mutableListOf<Reason>()
-        val now = System.currentTimeMillis()
+        val now = clock()
+        // Memoria de picos: el pulso sube y baja sin parar; un fotógrafo elige la velocidad para
+        // los peores momentos de los últimos segundos y la mantiene, en vez de seguir cada temblor.
+        val decay = if (lastDecide == 0L) 0f else kotlin.math.exp(-(now - lastDecide) / PEAK_MEMORY_MS.toFloat())
+        lastDecide = now
+        motionPeak = maxOf(i.imageMotion, motionPeak * decay)
+        gyroPeak = maxOf(i.gyro, gyroPeak * decay)
 
         // ------------------------------------------------ Exposición (medición inteligente)
         // 1) Clave de la escena: lo que un fotómetro "promedio" hace mal.
@@ -106,7 +122,9 @@ class PhotoBrain {
         // 3) Protección de altas luces SOLO si una zona grande se quema (cielo, ventana).
         //    Una lámpara o el sol se dejan quemar, como haría un fotógrafo.
         var hdr = false
-        if (i.clippedArea > BIG_CLIP) {
+        // Histéresis: no encender y apagar la protección cuando lo quemado ronda el umbral.
+        protecting = if (protecting) i.clippedArea > BIG_CLIP * 0.5f else i.clippedArea > BIG_CLIP
+        if (protecting) {
             if (subjectActive && subj!!.isFace) {
                 // La cara manda: se queda bien expuesta y la ventana o el cielo se recuperan con HDR.
                 hdr = true
@@ -125,8 +143,9 @@ class PhotoBrain {
         if (i.subjectSpeed > 0.15f || i.gyro > 0.15f || i.imageMotion > 0.12f) hdr = false // HDR con movimiento deja fantasmas
 
         targetEv = targetEv.coerceIn(-2f, 2f)
-        // Cambios suaves (máx. 1/3 de paso por ciclo) para que la imagen no "bombee".
-        smoothEv += (targetEv - smoothEv).coerceIn(-0.34f, 0.34f)
+        // Cambios suaves (máx. 1/3 de paso por ciclo) y zona muerta: diferencias menores a
+        // 0.15 pasos no se corrigen, para que la imagen no "tiemble".
+        if (abs(targetEv - smoothEv) >= 0.15f) smoothEv += (targetEv - smoothEv).coerceIn(-0.34f, 0.34f)
         if (abs(smoothEv) >= 0.15f) reasons += Reason(ExposureMath.formatEv(smoothEv) + " EV", evWhy)
         if (hdr) reasons.add(0, Reason("HDR", if (sunsetGlow) "recupero el color del cielo sin aclarar la silueta" else "cielo y sombras con detalle a la vez"))
 
@@ -151,9 +170,9 @@ class PhotoBrain {
             else -> Unit
         }
         if (i.subjectSpeed > 0.04f) limit(0.003 / i.subjectSpeed, "el sujeto se mueve")
-        if (i.gyro > 0.03f) limit(0.002 * hfov / i.gyro, "compenso el movimiento de tu mano")
+        if (gyroPeak > 0.03f) limit(0.002 * hfov / gyroPeak, "compenso el movimiento de tu mano")
         // Medido en la propia imagen: incluye pulso y paneo tal como afectan a la foto.
-        if (i.imageMotion > 0.03f) limit(0.002 / i.imageMotion, "la imagen se desplaza: compenso")
+        if (motionPeak > 0.03f) limit(0.002 / motionPeak, "compenso el pulso de tu mano")
 
         var shutter: Long? = null
         // Si ya estamos en exposición larga, el ISO bajó justamente por eso: no soltarla (evita oscilar).
@@ -187,8 +206,9 @@ class PhotoBrain {
                 }
             }
         }
+        shutter = stabilize(shutter, engaged, now)
         if (shutter != null) {
-            reasons.add(0, Reason(ExposureMath.formatShutter(shutter), shutterWhy))
+            reasons.add(0, Reason(ExposureMath.formatShutter(shutter), shutterWhy.ifEmpty { "mantengo la velocidad estable" }))
         }
 
         // ------------------------------------------------ Lente
@@ -213,12 +233,47 @@ class PhotoBrain {
         const val BIG_CLIP = 0.03f
         /** Brillo al que debe llegar lo más claro de la nieve (blanco con detalle, sin quemar). */
         const val SNOW_WHITE = 0.95f
+        /** Diferencia mínima (en pasos) para cambiar la velocidad. */
+        const val MIN_CHANGE_STOPS = 0.6
+        /** Tiempo que debe mantenerse la calma antes de ir más lento o soltar el control (acelerar es inmediato). */
+        const val HOLD_MS = 3000L
+        /** Cuánto se recuerdan los picos de movimiento. */
+        const val PEAK_MEMORY_MS = 3000L
         private val SUBJECT_SCENES = setOf(Scene.PORTRAIT, Scene.PET, Scene.ANIMAL, Scene.FOOD, Scene.MACRO, Scene.GENERAL)
     }
 
     fun reset() {
         smoothEv = 0f
         lowIsoSince = 0L
+        protecting = false
+        slowerSince = 0L
+        releaseSince = 0L
+        motionPeak = 0f
+        gyroPeak = 0f
+        lastDecide = 0L
+    }
+
+    /**
+     * Estabilidad de la velocidad, como un fotógrafo: no se cambia por diferencias pequeñas,
+     * se acelera enseguida si de verdad hace falta (evitar fotos movidas), y se va más lento
+     * o se suelta el control solo si la necesidad se mantiene un momento.
+     */
+    private fun stabilize(wanted: Long?, engaged: Long?, now: Long): Long? {
+        if (engaged == null) { slowerSince = 0L; releaseSince = 0L; return wanted }
+        if (wanted == null) {
+            if (releaseSince == 0L) releaseSince = now
+            return if (now - releaseSince >= HOLD_MS) { releaseSince = 0L; null } else engaged
+        }
+        releaseSince = 0L
+        val stops = log2(engaged.toDouble() / wanted)
+        return when {
+            stops >= MIN_CHANGE_STOPS -> { slowerSince = 0L; wanted }
+            stops > -MIN_CHANGE_STOPS -> { slowerSince = 0L; engaged }
+            else -> {
+                if (slowerSince == 0L) slowerSince = now
+                if (now - slowerSince >= HOLD_MS) { slowerSince = 0L; wanted } else engaged
+            }
+        }
     }
 
     /** Elige el valor estándar más rápido que cumple el límite (nunca más lento). */

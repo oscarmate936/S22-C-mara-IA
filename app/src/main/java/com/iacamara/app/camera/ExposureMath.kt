@@ -105,6 +105,10 @@ object ExposureMath {
         }
     }
 
+    /** ISO que mantiene el mismo brillo al cambiar la velocidad (ISO × tiempo constante). */
+    fun keepExposure(iso: Int, oldShutterNs: Long, newShutterNs: Long, isoMin: Int, isoMax: Int): Int =
+        (iso.toDouble() * oldShutterNs / newShutterNs.coerceAtLeast(1)).roundToInt().coerceIn(isoMin, isoMax)
+
     fun <T : Comparable<T>> nearestIndex(values: List<T>, target: T, distance: (T, T) -> Double): Int =
         values.indices.minByOrNull { distance(values[it], target) } ?: 0
 

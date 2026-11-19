@@ -169,6 +169,27 @@ class PrecisionTest {
         flush("reporte_precision_flujo.txt")
     }
 
+    @Test fun cambioDeBrilloNoEsMovimiento() {
+        // La cámara cambia la exposición (−30 % de luz) sin que nada se mueva.
+        val bg = BitmapFactory.decodeStream(javaClass.classLoader!!.getResourceAsStream("sim/coffee.png"))!!
+        val w = 480; val h = 320
+        val base = IntArray(w * h) { i -> bg.getPixel(40 + i % w, 30 + i / w) }
+        fun scaled(k: Float) = IntArray(w * h) { i ->
+            val p = base[i]
+            fun c(sh: Int) = ((((p shr sh) and 0xFF) * k).toInt().coerceIn(0, 255))
+            (0xFF shl 24) or (c(16) shl 16) or (c(8) shl 8) or c(0)
+        }
+        var t = 0L
+        var last: FrameStats? = null
+        val fa = FrameAnalyzer(onStats = { last = it }, clock = { t }, minIntervalMs = 0)
+        fa.portraitRotation = 0
+        fa.analyze(proxyOf(scaled(1f), w, h)); t += 125_000_000L
+        fa.analyze(proxyOf(scaled(0.7f), w, h))
+        line("BRILLO  la exposición baja 30%% sin movimiento → movimiento medido %.3f anchos/s (debe ser ≈ 0)".format(last!!.globalMotion))
+        assertTrue(last!!.globalMotion < 0.01f)
+        flush("reporte_precision_brillo.txt")
+    }
+
     // ------------------------------------------------ 3. Fusión temporal de escenas
 
     @Test fun fusionTemporalDeEscenas() {

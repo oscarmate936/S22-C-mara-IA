@@ -739,7 +739,7 @@ class CameraEngine(private val context: Context) {
     private fun onFrameStats(s: FrameStats) {
         stats = s
         // Flujo óptico (8 veces por segundo): movimiento real del sujeto y de la imagen.
-        imageMotion += (s.globalMotion - imageMotion) * 0.5f
+        imageMotion += (s.globalMotion - imageMotion) * 0.25f
         if (subject != null && s.subjectMotion != null) subjectSpeed += (s.subjectMotion - subjectSpeed) * 0.5f
         // Gris medio en espacio gamma ≈ 0.46; cada paso equivale a ×2^(1/2.2) en luminancia codificada.
         val target = 0.46f * 2f.pow(meterEv / 2.2f)
@@ -808,10 +808,14 @@ class CameraEngine(private val context: Context) {
         brainWantsHdr = d.hdr && caps.manualSensor
         val flashReady = flash != FlashSetting.OFF && caps.hasFlash && !useFront
         val shutter = d.shutterNs.takeIf { caps.manualSensor && !flashReady }
+        val isoMin = caps.isoValues.firstOrNull() ?: 50
+        val isoMax = caps.isoValues.lastOrNull() ?: 3200
         if (shutter != null && engagedBefore == null && live.shutterNs > 0 && live.iso > 0) {
             // Mantener el mismo brillo al pasar del automático al control del cerebro.
-            val iso = (live.iso.toDouble() * live.shutterNs / shutter).toInt()
-            priorityIso = iso.coerceIn(caps.isoValues.firstOrNull() ?: 50, caps.isoValues.lastOrNull() ?: 3200)
+            priorityIso = ExposureMath.keepExposure(live.iso, live.shutterNs, shutter, isoMin, isoMax)
+        } else if (shutter != null && engagedBefore != null && shutter != engagedBefore) {
+            // Cambio de velocidad: el ISO compensa en el mismo instante (sin "bombeo" de brillo).
+            priorityIso = ExposureMath.keepExposure(priorityIso, engagedBefore, shutter, isoMin, isoMax)
         }
         val changed = abs(d.ev - brainEv) > 0.05f || d.wb != brainWb || shutter != brainShutterNs
         brainEv = d.ev

@@ -299,6 +299,14 @@ class FrameAnalyzer(
      */
     private fun flow(prev: ByteArray, cur: ByteArray, sw: Int, x0: Int, y0: Int, x1: Int, y1: Int, exclude: IntArray?): Pair<Float, Float> {
         fun skip(x: Int, y: Int) = exclude != null && x >= exclude[0] && x < exclude[2] && y >= exclude[1] && y < exclude[3]
+        // Diferencia de brillo media entre fotogramas: se descuenta para que un cambio de
+        // exposición no se confunda con movimiento.
+        var sp = 0L; var sc = 0L; var cnt = 0
+        for (y in y0 until y1) for (x in x0 until x1) {
+            if (skip(x, y)) continue
+            sp += prev[y * sw + x].toInt() and 0xFF; sc += cur[y * sw + x].toInt() and 0xFF; cnt++
+        }
+        val off = if (cnt == 0) 0 else ((sc - sp) / cnt).toInt()
         fun sad(dx: Int, dy: Int): Long {
             var s = 0L
             for (y in y0 until y1) {
@@ -306,7 +314,7 @@ class FrameAnalyzer(
                 val cr = (y + dy) * sw + dx
                 for (x in x0 until x1) {
                     if (skip(x, y)) continue
-                    s += kotlin.math.abs((prev[pr + x].toInt() and 0xFF) - (cur[cr + x].toInt() and 0xFF))
+                    s += kotlin.math.abs((prev[pr + x].toInt() and 0xFF) + off - (cur[cr + x].toInt() and 0xFF))
                 }
             }
             return s
@@ -335,7 +343,7 @@ class FrameAnalyzer(
                 if (skip(x, y)) continue
                 val gx = (p(x + 1, y) - p(x - 1, y)) / 2f
                 val gy = (p(x, y + 1) - p(x, y - 1)) / 2f
-                val it = c(x + ux, y + uy) - p(x, y)
+                val it = c(x + ux, y + uy) - p(x, y) - off
                 sxx += gx * gx; sxy += gx * gy; syy += gy * gy; sxt += gx * it; syt += gy * it
             }
             val det = sxx * syy - sxy * sxy
