@@ -218,7 +218,7 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text("IA Cámara ${BuildConfigInfo.VERSION}", style = Type.BodyStrong, color = Palette.Paper)
-                        Text("Fase 9 · Edición con IA y tu estilo", style = Type.Body, color = Palette.Mist)
+                        Text("Fase 10 · Calibración profesional · Galaxy S22+", style = Type.Body, color = Palette.Mist)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -231,6 +231,7 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                 Roadmap("7", "Modo retrato y visor de fotos", done = true)
                 Roadmap("8", "Súper resolución, noche v2, exposición larga y astro", done = true)
                 Roadmap("9", "Retoque por zonas, enderezado, calificación y tu estilo", done = true)
+                Roadmap("10", "Calibración profesional y exclusiva del S22+", done = true)
             }
         }
     }

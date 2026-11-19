@@ -1,0 +1,26 @@
+fotos: 3000 de ajuste · 1000 de prueba
+  correlación nitidez: +0.321
+  correlación ruido: +0.118
+  correlación quemado: +0.279
+  correlación negro: -0.104
+  correlación brillo medio: +0.386
+PRUEBA  Spearman 0.286 → 0.508 · Pearson 0.291 → 0.504
+  Ws = 24.8187
+  Ts = 0.4334
+  Rs = 0.3075
+  Wn = 0.0269
+  Tn = 1.0867
+  Rn = 17.3389
+  Wc = 0.0000
+  Tc = 0.0099
+  Rc = 0.1864
+  Wk = 0.0001
+  Tk = 0.0943
+  Rk = 0.7350
+  Wd = 31.1209
+  Td = 0.3219
+  Rd = 0.3694
+  Wb = 13.8342
+  Tb = 0.7930
+  Rb = 0.0604
+  Wt = 0.7765
