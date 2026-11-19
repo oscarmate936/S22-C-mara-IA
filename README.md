@@ -30,6 +30,8 @@ Cada cambio que se sube al repositorio vuelve a compilar el APK automáticamente
 | **Entrenador de composición** | Línea guía hacia el punto fuerte de los tercios (con los ojos como referencia en retratos), o la línea donde poner el horizonte. Se pone verde y vibra al quedar bien compuesto. |
 | **Receta profesional** | Toca **AJUSTAR** y la app aplica lo que haría un fotógrafo para esa escena: lente, velocidad, exposición y blancos. Toca el nombre de la escena para ver los consejos. |
 
+| **Cerebro fotógrafo** (fase 3) | En modo **IA** ajusta todo solo y de forma continua. Elige la velocidad según el movimiento real del sujeto (IA) y de tu mano (giroscopio), aplicando la regla de pulso según la focal. Aplica la exposición de cada escena y protege las altas luces. Si el teléfono está apoyado (trípode), usa exposición larga con ISO bajo. Cambia de lente cuando la escena lo pide, con opción de deshacer. Cada decisión se explica en pantalla y los valores que decide la IA se ven en **cian**. |
+
 Las fotos se guardan en **Imágenes › IA Camara**.
 
 ## Diseño
@@ -46,7 +48,7 @@ Paleta negro tinta con paneles de vidrio. El ámbar marca la acción y los valor
 
 1. ✅ Control manual total, lentes, guías y diseño
 2. ✅ IA en el teléfono (ML Kit): reconocer escena y sujeto, entrenador de composición
-3. ⏳ "Cerebro fotógrafo": aplicar las recetas solo y de forma continua, sin tocar nada
+3. ✅ "Cerebro fotógrafo": decisiones automáticas de velocidad, exposición, blancos y lente
 4. ⏳ RAW, apilado multi‑foto, macro con *focus stacking* y modo noche o trípode
 
 ## Desarrollo

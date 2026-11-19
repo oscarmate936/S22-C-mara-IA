@@ -20,7 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Camera
 import androidx.compose.material.icons.rounded.CenterFocusStrong
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.GridGoldenratio
 import androidx.compose.material.icons.rounded.Straighten
@@ -77,6 +79,10 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
             Card {
                 ToggleRow(Icons.Rounded.AutoAwesome, "IA de escena", "Reconoce retratos, mascotas, atardeceres, playas, comida, macro y noche. Funciona sin internet.", prefs.aiScene, prefs::updateAiScene)
                 Divider()
+                ToggleRow(Icons.Rounded.Psychology, "Cerebro fotógrafo", "En modo IA ajusta solo velocidad, exposición y blancos según la escena, el movimiento y tu pulso.", prefs.autoBrain, prefs::updateAutoBrain)
+                Divider()
+                ToggleRow(Icons.Rounded.Camera, "Lente automático", "Cambia al lente ideal para la escena (siempre puedes deshacerlo).", prefs.autoLens, prefs::updateAutoLens)
+                Divider()
                 ToggleRow(Icons.Rounded.CenterFocusStrong, "Enfoque en el sujeto", "El foco sigue rostros y sujetos solo, sin tocar la pantalla.", prefs.subjectFocus, prefs::updateSubjectFocus)
                 Divider()
                 ToggleRow(Icons.Rounded.GridGoldenratio, "Entrenador de composición", "Te muestra a dónde mover el sujeto o el horizonte.", prefs.coach, prefs::updateCoach)
@@ -122,13 +128,13 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text("IA Cámara ${BuildConfigInfo.VERSION}", style = Type.BodyStrong, color = Palette.Paper)
-                        Text("Fase 2 · IA de escena y sujeto", style = Type.Body, color = Palette.Mist)
+                        Text("Fase 3 · Cerebro fotógrafo", style = Type.Body, color = Palette.Mist)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
                 Roadmap("1", "Control manual total y lentes", done = true)
                 Roadmap("2", "IA que reconoce la escena y al sujeto", done = true)
-                Roadmap("3", "Cerebro fotógrafo: ajuste automático experto", done = false)
+                Roadmap("3", "Cerebro fotógrafo: ajuste automático experto", done = true)
                 Roadmap("4", "RAW, apilado, macro y modo noche", done = false)
             }
         }

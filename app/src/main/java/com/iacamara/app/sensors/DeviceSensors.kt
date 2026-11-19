@@ -23,6 +23,16 @@ import kotlin.math.sqrt
 class DeviceSensors(context: Context) : SensorEventListener {
     private val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val gravity = sm.getDefaultSensor(Sensor.TYPE_GRAVITY) ?: sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private val gyroscope = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+
+    /** Velocidad de giro del teléfono (rad/s), suavizada: mide el pulso. */
+    var shake by mutableFloatStateOf(0f)
+        private set
+
+    /** true si el teléfono lleva un rato totalmente quieto (trípode o apoyado). */
+    var steady by mutableStateOf(false)
+        private set
+    private var stillSince = 0L
 
     /** Inclinación respecto al horizonte más cercano, en grados (-45..45). */
     var tilt by mutableFloatStateOf(0f)
@@ -65,6 +75,7 @@ class DeviceSensors(context: Context) : SensorEventListener {
 
     fun start() {
         gravity?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
+        gyroscope?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
         if (orientationListener.canDetectOrientation()) orientationListener.enable()
     }
 
@@ -74,6 +85,19 @@ class DeviceSensors(context: Context) : SensorEventListener {
     }
 
     override fun onSensorChanged(e: SensorEvent) {
+        if (e.sensor.type == Sensor.TYPE_GYROSCOPE) {
+            val w = sqrt(e.values[0] * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2])
+            shake += (w - shake) * 0.15f
+            val now = System.currentTimeMillis()
+            if (shake < 0.012f) {
+                if (stillSince == 0L) stillSince = now
+                if (!steady && now - stillSince > 1500) steady = true
+            } else {
+                stillSince = 0L
+                if (steady && shake > 0.03f) steady = false
+            }
+            return
+        }
         val (x, y, z) = Triple(e.values[0], e.values[1], e.values[2])
         val g = sqrt(x * x + y * y + z * z).coerceAtLeast(0.1f)
         isFlat = abs(z) / g > 0.85f

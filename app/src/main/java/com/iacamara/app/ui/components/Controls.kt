@@ -196,8 +196,8 @@ fun RoundGlassButton(icon: ImageVector, contentDescription: String, rotation: In
 // ------------------------------------------------------------------ Modo
 
 @Composable
-fun ModeSwitch(mode: CaptureMode, onChange: (CaptureMode) -> Unit) {
-    val items = listOf(CaptureMode.AUTO to "AUTO", CaptureMode.PRO to "PRO")
+fun ModeSwitch(mode: CaptureMode, autoLabel: String = "AUTO", onChange: (CaptureMode) -> Unit) {
+    val items = listOf(CaptureMode.AUTO to autoLabel, CaptureMode.PRO to "PRO")
     val segment = 76.dp
     val offset by animateDpAsState(
         if (mode == CaptureMode.AUTO) 0.dp else segment,
@@ -297,6 +297,8 @@ data class ReadoutItem(
     val auto: Boolean,
     val selected: Boolean,
     val enabled: Boolean = true,
+    /** Valor decidido por el cerebro fotógrafo (se muestra en cian). */
+    val ai: Boolean = false,
     val onClick: (() -> Unit)?,
 )
 
@@ -319,6 +321,7 @@ private fun ReadoutCell(item: ReadoutItem, modifier: Modifier) {
     val valueColor by animateColorAsState(
         when {
             !item.enabled -> Palette.Fog
+            item.ai -> Palette.Cyan
             item.auto -> Palette.Paper
             else -> Palette.Amber
         }, label = "readout",

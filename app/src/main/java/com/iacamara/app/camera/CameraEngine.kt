@@ -17,6 +17,9 @@ import android.provider.MediaStore
 import android.util.Log
 import android.util.Size
 import android.view.Surface
+import com.iacamara.app.ai.BrainInput
+import com.iacamara.app.ai.PhotoBrain
+import com.iacamara.app.ai.Reason
 import com.iacamara.app.ai.Scene
 import com.iacamara.app.ai.SceneBrain
 import com.iacamara.app.ai.SceneDetector
@@ -164,10 +167,29 @@ class CameraEngine(private val context: Context) {
     var aiEnabled: Boolean = true
         set(v) {
             field = v
-            if (!v) { scene = null; subject = null }
+            if (!v) { scene = null; subject = null; clearBrain(); applyControls() }
         }
     /** Enfocar solo al sujeto que detecta la IA. */
     var subjectFocus: Boolean = true
+
+    // ---------------- Cerebro fotógrafo (fase 3) ----------------
+    /** El cerebro controla el modo automático. */
+    var autoBrain: Boolean = true
+        set(v) { field = v; if (!v) clearBrain(); applyControls() }
+    /** El cerebro puede cambiar de lente solo. */
+    var autoLens: Boolean = true
+    var brainEv by mutableFloatStateOf(0f)
+        private set
+    var brainWb by mutableStateOf(WhiteBalance.AUTO)
+        private set
+    var brainShutterNs by mutableStateOf<Long?>(null)
+        private set
+    /** Decisiones explicadas que se muestran en pantalla. */
+    var brainReasons by mutableStateOf<List<Reason>>(emptyList())
+        private set
+    /** Aviso de cambio automático de lente (con opción de deshacer). */
+    var lensNotice by mutableStateOf<String?>(null)
+    val brainActive: Boolean get() = mode == CaptureMode.AUTO && aiEnabled && autoBrain
 
     /** Lectura del fotómetro en pasos (exposición medida vs. ideal) cuando todo es manual. */
     var meterStops by mutableFloatStateOf(0f)
@@ -198,6 +220,21 @@ class CameraEngine(private val context: Context) {
     private var lastAutoFocus = 0L
     private var lastFocusX = -1f
     private var lastFocusY = -1f
+
+    private val photoBrain = PhotoBrain()
+    private var lastBrainRun = 0L
+    private var gyro = 0f
+    private var steady = false
+    private var subjectSpeed = 0f
+    private var lastSubjectX = -1f
+    private var lastSubjectY = -1f
+    private var lastSubjectTime = 0L
+    private var lastLensDecision: Float? = null
+    private var stableScene: Scene? = null
+    private var stableSince = 0L
+    private var autoLensScene: Scene? = null
+    private var lastUserLens = 0L
+    private var lensBeforeAuto: Lens? = null
 
     fun bind(owner: LifecycleOwner, view: PreviewView) {
         lifecycleOwner = owner
@@ -301,7 +338,8 @@ class CameraEngine(private val context: Context) {
         activeLens = lenses.firstOrNull { it.cameraId == mainId && it.zoom == 1f } ?: lenses.first()
     }
 
-    fun selectLens(lens: Lens) {
+    fun selectLens(lens: Lens, byUser: Boolean = true) {
+        if (byUser) { lastUserLens = System.currentTimeMillis(); lensNotice = null }
         if (lens == activeLens) return
         val needsRebind = lens.cameraId != boundCameraId
         activeLens = lens
@@ -310,6 +348,7 @@ class CameraEngine(private val context: Context) {
 
     fun flipCamera() {
         useFront = !useFront
+        clearBrain()
         resetManual()
         discoverLenses()
         rebind()
@@ -318,6 +357,7 @@ class CameraEngine(private val context: Context) {
     /** Pellizcar para hacer zoom: multiplica el zoom actual. */
     fun pinchZoom(scale: Float) {
         val cam = camera ?: return
+        lastUserLens = System.currentTimeMillis()
         val z = cam.cameraInfo.zoomState.value ?: return
         val next = (z.zoomRatio * scale).coerceIn(z.minZoomRatio, z.maxZoomRatio)
         cam.cameraControl.setZoomRatio(next)
@@ -450,6 +490,7 @@ class CameraEngine(private val context: Context) {
         if (m == mode) return
         mode = m
         if (m == CaptureMode.AUTO) { selectedParam = null; appliedScene = null }
+        clearBrain()
         applyControls()
     }
 
@@ -505,8 +546,27 @@ class CameraEngine(private val context: Context) {
         Param.EV -> abs(evCompensation) < 0.01f
     }
 
+    /** ISO fijado (solo por la persona en PRO). */
+    private val fixedIso: Int? get() = if (mode == CaptureMode.PRO) manualIso else null
+    /** Velocidad fijada: por la persona en PRO o por el cerebro en AUTO. */
+    private val fixedShutter: Long?
+        get() = when {
+            mode == CaptureMode.PRO -> manualShutterNs
+            brainActive -> brainShutterNs
+            else -> null
+        }
     private val sensorManual: Boolean
-        get() = mode == CaptureMode.PRO && caps.manualSensor && (manualIso != null || manualShutterNs != null)
+        get() = caps.manualSensor && (fixedIso != null || fixedShutter != null)
+    /** Compensación que usa el fotómetro propio. */
+    private val meterEv: Float get() = if (mode == CaptureMode.PRO) evCompensation else if (brainActive) brainEv else 0f
+
+    private fun clearBrain() {
+        brainEv = 0f
+        brainWb = WhiteBalance.AUTO
+        brainShutterNs = null
+        brainReasons = emptyList()
+        photoBrain.reset()
+    }
 
     private fun applyControls() {
         val cam = camera ?: return
@@ -514,9 +574,29 @@ class CameraEngine(private val context: Context) {
         val evIndex = (evCompensation / caps.evStep).roundToInt()
 
         if (mode == CaptureMode.AUTO) {
-            c2.clearCaptureRequestOptions()
-            cam.cameraControl.setExposureCompensationIndex(0)
-            imageCapture?.flashMode = flash.toCameraX()
+            if (!brainActive) {
+                c2.clearCaptureRequestOptions()
+                cam.cameraControl.setExposureCompensationIndex(0)
+                imageCapture?.flashMode = flash.toCameraX()
+                return
+            }
+            // El cerebro fotógrafo al mando.
+            val b = CaptureRequestOptions.Builder()
+            val shutter = brainShutterNs
+            if (shutter != null && sensorManual) {
+                b.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
+                b.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, priorityIso)
+                b.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, shutter)
+                b.setCaptureRequestOption(CaptureRequest.SENSOR_FRAME_DURATION, maxOf(shutter, 33_333_333L))
+                imageCapture?.flashMode = ImageCapture.FLASH_MODE_OFF
+            } else {
+                val lo = ((caps.evValues.firstOrNull() ?: 0f) / caps.evStep).roundToInt()
+                val hi = ((caps.evValues.lastOrNull() ?: 0f) / caps.evStep).roundToInt()
+                cam.cameraControl.setExposureCompensationIndex((brainEv / caps.evStep).roundToInt().coerceIn(lo, hi))
+                imageCapture?.flashMode = flash.toCameraX()
+            }
+            b.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, brainWb.awbMode)
+            c2.setCaptureRequestOptions(b.build())
             return
         }
 
@@ -548,13 +628,14 @@ class CameraEngine(private val context: Context) {
     private fun onFrameStats(s: FrameStats) {
         stats = s
         // Gris medio en espacio gamma ≈ 0.46; cada paso equivale a ×2^(1/2.2) en luminancia codificada.
-        val target = 0.46f * 2f.pow(evCompensation / 2.2f)
+        val target = 0.46f * 2f.pow(meterEv / 2.2f)
         val error = 2.2f * log2(target / s.meanLuma.coerceIn(0.01f, 0.99f))
         meterStops = -error
 
+        if (brainActive) runBrain()
         if (!sensorManual) return
-        val isoFree = manualIso == null
-        val shutterFree = manualShutterNs == null
+        val isoFree = fixedIso == null
+        val shutterFree = fixedShutter == null
         if (isoFree == shutterFree) return // ambos manuales: solo se muestra el fotómetro
         val now = System.currentTimeMillis()
         if (now - lastPriorityApply < 200 || abs(error) < 0.15f) return
@@ -574,6 +655,74 @@ class CameraEngine(private val context: Context) {
         applyControls()
     }
 
+    // ---------------- Cerebro fotógrafo ----------------
+
+    /** Datos de movimiento del teléfono (giroscopio). */
+    fun updateMotion(shake: Float, isSteady: Boolean) {
+        gyro = shake
+        steady = isSteady
+    }
+
+    private fun currentEquivalentMm(): Float {
+        val l = activeLens ?: return mainEquivalentMm
+        return l.equivalentMm * zoomRatio / l.zoom
+    }
+
+    /** Dos veces por segundo: el cerebro decide y la cámara se ajusta suavemente. */
+    private fun runBrain() {
+        val now = System.currentTimeMillis()
+        if (now - lastBrainRun < 500) return
+        lastBrainRun = now
+        val st = stats ?: return
+        val sc = scene?.scene ?: Scene.GENERAL
+        val engagedBefore = brainShutterNs
+        val d = photoBrain.decide(
+            BrainInput(
+                scene = sc, subject = subject, subjectSpeed = subjectSpeed, gyro = gyro, steady = steady,
+                equivalentMm = currentEquivalentMm(), meanLuma = st.meanLuma, clippedHighlights = st.clippedHighlights,
+                liveIso = live.iso, aeShutterNs = live.shutterNs,
+                isoMin = caps.isoValues.firstOrNull() ?: 50, isoMax = caps.isoValues.lastOrNull() ?: 3200,
+                priorityIso = priorityIso, shutterValues = caps.shutterValues,
+            ),
+            engagedBefore,
+        )
+        val shutter = d.shutterNs.takeIf { caps.manualSensor }
+        if (shutter != null && engagedBefore == null && live.shutterNs > 0 && live.iso > 0) {
+            // Mantener el mismo brillo al pasar del automático al control del cerebro.
+            val iso = (live.iso.toDouble() * live.shutterNs / shutter).toInt()
+            priorityIso = iso.coerceIn(caps.isoValues.firstOrNull() ?: 50, caps.isoValues.lastOrNull() ?: 3200)
+        }
+        val changed = abs(d.ev - brainEv) > 0.05f || d.wb != brainWb || shutter != brainShutterNs
+        brainEv = d.ev
+        brainWb = d.wb
+        brainShutterNs = shutter
+        brainReasons = d.reasons
+        lastLensDecision = d.lensFactor
+        if (changed) applyControls()
+    }
+
+    /** Cambia de lente solo cuando la escena es estable y la persona no eligió uno hace poco. */
+    private fun maybeAutoLens(sc: Scene) {
+        val now = System.currentTimeMillis()
+        if (sc != stableScene) { stableScene = sc; stableSince = now; return }
+        if (!brainActive || !autoLens || useFront) return
+        if (now - stableSince < 2000 || now - lastUserLens < 15000 || autoLensScene == sc) return
+        val factor = lastLensDecision ?: return
+        val current = activeLens ?: return
+        val target = lenses.filter { it.factor <= 3.5f }
+            .minByOrNull { abs(kotlin.math.ln(it.factor / factor)) } ?: return
+        autoLensScene = sc
+        if (abs(target.factor - current.baseFactor * zoomRatio) < 0.3f) return
+        lensBeforeAuto = current
+        selectLens(target, byUser = false)
+        lensNotice = "LENTE ${target.label}× · ${sc.title.substringBefore(" ·").uppercase()}"
+    }
+
+    fun undoAutoLens() {
+        lensBeforeAuto?.let { selectLens(it, byUser = true) }
+        lensNotice = null
+    }
+
     // ---------------- IA de escena y sujeto ----------------
 
     /** Corre en el hilo de análisis: decide si este fotograma va a la IA (~3 por segundo). */
@@ -591,7 +740,20 @@ class CameraEngine(private val context: Context) {
         if (!aiEnabled) return
         val (result, subj) = brain.update(d, stats, live, useFront)
         scene = result
+        // Velocidad del sujeto (anchos de visor por segundo), suavizada.
+        val now = System.currentTimeMillis()
+        if (subj != null && lastSubjectTime > 0 && lastSubjectX >= 0f) {
+            val dt = (now - lastSubjectTime) / 1000f
+            if (dt in 0.05f..1.5f) {
+                val v = kotlin.math.hypot(subj.box.centerX() - lastSubjectX, subj.box.centerY() - lastSubjectY) / dt
+                subjectSpeed += (v - subjectSpeed) * 0.4f
+            }
+        } else if (subj == null) subjectSpeed *= 0.5f
+        lastSubjectX = subj?.box?.centerX() ?: -1f
+        lastSubjectY = subj?.box?.centerY() ?: -1f
+        lastSubjectTime = now
         subject = subj
+        maybeAutoLens(result.scene)
         if (appliedScene != null && appliedScene != result.scene && result.scene != Scene.GENERAL) appliedScene = null
         subj?.let { focusOnSubject(it) }
     }
@@ -722,6 +884,13 @@ class CameraEngine(private val context: Context) {
         stats = FrameStats(hist, 0.45f, 0.01f, 0.0f)
         scene = SceneResult(Scene.PORTRAIT, 0.92f, listOf("rostro"))
         subject = Subject(android.graphics.RectF(0.42f, 0.30f, 0.70f, 0.52f), "Persona", true)
+        brainEv = 0.3f
+        brainShutterNs = 8_000_000L
+        brainReasons = listOf(
+            Reason("1/125", "evita retratos movidos"),
+            Reason("+0.3 EV", "piel más luminosa"),
+        )
+        lensNotice = "LENTE 2× · RETRATO"
         if (pro) {
             mode = CaptureMode.PRO
             manualShutterNs = 4_000_000L

@@ -166,7 +166,7 @@ fun CompositionCoach(subject: Subject?, goal: CompositionGoal, haptics: Boolean)
  * toca "AJUSTAR" para que la app lo aplique en un toque.
  */
 @Composable
-fun SceneChip(result: SceneResult?, applied: Boolean, onOpen: () -> Unit, onApply: () -> Unit) {
+fun SceneChip(result: SceneResult?, applied: Boolean, showApply: Boolean = true, onOpen: () -> Unit, onApply: () -> Unit) {
     AnimatedVisibility(result != null, enter = fadeIn(), exit = fadeOut()) {
         val r = result ?: return@AnimatedVisibility
         Row(
@@ -183,7 +183,7 @@ fun SceneChip(result: SceneResult?, applied: Boolean, onOpen: () -> Unit, onAppl
                     Text(sc.title.substringBefore(" ·").uppercase(), style = Type.Label, color = Palette.Paper)
                 }
             }
-            if (r.scene.recipe != null) {
+            if (showApply && r.scene.recipe != null) {
                 Box(Modifier.width(1.dp).height(18.dp).background(Palette.Hairline))
                 val col = if (applied) Palette.Level else Palette.Amber
                 Row(
@@ -202,3 +202,27 @@ fun SceneChip(result: SceneResult?, applied: Boolean, onOpen: () -> Unit, onAppl
     }
 }
 
+
+/**
+ * Lo que está decidiendo el cerebro fotógrafo, explicado en una línea cada cosa.
+ * Así aprendes fotografía mientras disparas.
+ */
+@Composable
+fun BrainReasons(reasons: List<com.iacamara.app.ai.Reason>) {
+    AnimatedVisibility(reasons.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
+        androidx.compose.foundation.layout.Column(
+            Modifier.width(196.dp).glass(RoundedCornerShape(14.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
+            reasons.forEachIndexed { idx, r ->
+                if (idx > 0) Spacer(Modifier.height(5.dp))
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(
+                        r.value, style = Type.ReadoutSmall, color = Palette.Cyan, maxLines = 1,
+                        modifier = Modifier.width(62.dp),
+                    )
+                    Text(r.why, style = Type.Body.copy(fontSize = 11.sp, lineHeight = 14.sp), color = Palette.Paper.copy(alpha = 0.85f))
+                }
+            }
+        }
+    }
+}

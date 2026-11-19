@@ -37,6 +37,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Cameraswitch
 import androidx.compose.material.icons.rounded.FlashAuto
 import androidx.compose.material.icons.rounded.FlashOff
@@ -60,6 +61,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -89,6 +91,7 @@ import com.iacamara.app.sensors.DeviceSensors
 import com.iacamara.app.ai.CompositionGoal
 import com.iacamara.app.ui.components.CompositionCoach
 import com.iacamara.app.ui.components.SceneChip
+import com.iacamara.app.ui.components.BrainReasons
 import com.iacamara.app.ui.components.SubjectBox
 import com.iacamara.app.ui.components.BarIconButton
 import com.iacamara.app.ui.components.BarTextButton
@@ -159,9 +162,17 @@ fun CameraScreen(
         }
     }
     LaunchedEffect(sensors.surfaceRotation) { engine.setRotation(sensors.surfaceRotation) }
-    LaunchedEffect(prefs.aiScene, prefs.subjectFocus) {
+    LaunchedEffect(prefs.aiScene, prefs.subjectFocus, prefs.autoBrain, prefs.autoLens) {
         engine.aiEnabled = prefs.aiScene
         engine.subjectFocus = prefs.subjectFocus
+        engine.autoBrain = prefs.autoBrain
+        engine.autoLens = prefs.autoLens
+    }
+    LaunchedEffect(Unit) {
+        snapshotFlow { sensors.shake to sensors.steady }.collect { (s, st) -> engine.updateMotion(s, st) }
+    }
+    LaunchedEffect(engine.lensNotice) {
+        if (engine.lensNotice != null) { delay(4500); engine.lensNotice = null }
     }
 
     fun shoot() {
@@ -257,16 +268,24 @@ fun CameraScreen(
             }
             // Escena detectada por la IA (arriba a la derecha)
             if (prefs.aiScene) {
-                Box(Modifier.align(Alignment.TopEnd).padding(top = if (wide) headerHeight + 10.dp else 12.dp, end = 12.dp)) {
+                Column(
+                    Modifier.align(Alignment.TopEnd).padding(top = if (wide) headerHeight + 10.dp else 12.dp, end = 12.dp),
+                    horizontalAlignment = Alignment.End,
+                ) {
                     SceneChip(
                         engine.scene,
                         applied = engine.appliedScene != null && engine.appliedScene == engine.scene?.scene,
+                        showApply = !engine.brainActive,
                         onOpen = { showScene = true },
                         onApply = {
                             engine.scene?.scene?.let(engine::applyRecipe)
                             if (prefs.haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         },
                     )
+                    if (engine.brainActive && engine.scene != null) {
+                        Spacer(Modifier.height(8.dp))
+                        BrainReasons(engine.brainReasons)
+                    }
                 }
             }
             Column(
@@ -288,6 +307,12 @@ fun CameraScreen(
                     .padding(bottom = if (wide) 176.dp else 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                AnimatedVisibility(engine.lensNotice != null, enter = fadeIn() + slideInVertically(), exit = fadeOut()) {
+                    InfoPill(
+                        "IA · " + (engine.lensNotice ?: "") + " · DESHACER", Palette.Cyan, Icons.Rounded.AutoAwesome,
+                        Modifier.padding(bottom = 10.dp),
+                    ) { engine.undoAutoLens() }
+                }
                 LensSelector(engine.lenses, engine.activeLens, engine.zoomRatio, rotation) { engine.selectLens(it) }
                 Spacer(Modifier.height(10.dp))
                 AnimatedVisibility(
@@ -340,7 +365,7 @@ fun CameraScreen(
                 .padding(bottom = 18.dp, top = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ModeSwitch(engine.mode) {
+            ModeSwitch(engine.mode, autoLabel = if (prefs.aiScene && prefs.autoBrain) "IA" else "AUTO") {
                 if (prefs.haptics) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 engine.switchMode(it)
                 if (it == CaptureMode.PRO && engine.selectedParam == null) engine.selectedParam = Param.SHUTTER
@@ -371,6 +396,7 @@ fun CameraScreen(
             SceneSheet(
                 sceneNow,
                 applied = engine.appliedScene == sceneNow.scene,
+                autoMode = engine.brainActive,
                 onApply = { engine.applyRecipe(sceneNow.scene) },
                 onDismiss = { showScene = false },
             )
@@ -424,18 +450,23 @@ private fun readouts(engine: CameraEngine): List<ReadoutItem> {
     val pro = engine.mode == CaptureMode.PRO
     val fullManual = pro && engine.manualIso != null && engine.manualShutterNs != null
     val sel = engine.selectedParam.takeIf { pro }
+    val brain = engine.brainActive
+    val brainSensor = brain && engine.brainShutterNs != null
     return listOf(
         ReadoutItem(
             "ISO", (engine.manualIso ?: live.iso).takeIf { it > 0 }?.toString() ?: "—",
             auto = !pro || engine.isAuto(Param.ISO), selected = sel == Param.ISO, enabled = caps.manualSensor,
+            ai = brainSensor,
         ) { engine.openParam(Param.ISO) },
         ReadoutItem(
             "OBTUR.", (engine.manualShutterNs ?: live.shutterNs).takeIf { it > 0 }?.let(ExposureMath::formatShutter) ?: "—",
             auto = !pro || engine.isAuto(Param.SHUTTER), selected = sel == Param.SHUTTER, enabled = caps.manualSensor,
+            ai = brainSensor,
         ) { engine.openParam(Param.SHUTTER) },
         ReadoutItem(
-            "BLANCOS", if (pro) engine.whiteBalance.kelvin else "AWB",
+            "BLANCOS", if (pro) engine.whiteBalance.kelvin else if (brain) engine.brainWb.kelvin else "AWB",
             auto = !pro || engine.isAuto(Param.WB), selected = sel == Param.WB,
+            ai = brain && engine.brainWb != WhiteBalance.AUTO,
         ) { engine.openParam(Param.WB) },
         ReadoutItem(
             "ENFOQUE", engine.manualFocus?.takeIf { pro }?.let(ExposureMath::formatFocus) ?: "AF",
@@ -445,9 +476,10 @@ private fun readouts(engine: CameraEngine): List<ReadoutItem> {
             ReadoutItem("MEDIDOR", ExposureMath.formatEv(engine.meterStops), auto = abs(engine.meterStops) < 0.4f, selected = false, onClick = null)
         } else {
             ReadoutItem(
-                "EXP.", ExposureMath.formatEv(if (pro) engine.evCompensation else 0f),
+                "EXP.", ExposureMath.formatEv(if (pro) engine.evCompensation else if (brain) engine.brainEv else 0f),
                 auto = !pro || engine.isAuto(Param.EV), selected = sel == Param.EV,
                 enabled = caps.evValues.size > 1,
+                ai = brain && abs(engine.brainEv) >= 0.05f,
             ) { engine.openParam(Param.EV) }
         },
         ReadoutItem(

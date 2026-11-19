@@ -27,6 +27,10 @@ class Prefs(context: Context) {
         private set
     var subjectFocus by mutableStateOf(sp.getBoolean("subjectFocus", true))
         private set
+    var autoBrain by mutableStateOf(sp.getBoolean("autoBrain", true))
+        private set
+    var autoLens by mutableStateOf(sp.getBoolean("autoLens", true))
+        private set
     var timerSeconds by mutableStateOf(sp.getInt("timer", 0))
         private set
 
@@ -39,6 +43,8 @@ class Prefs(context: Context) {
     fun updateAiScene(v: Boolean) { aiScene = v; sp.edit().putBoolean("aiScene", v).apply() }
     fun updateCoach(v: Boolean) { coach = v; sp.edit().putBoolean("coach", v).apply() }
     fun updateSubjectFocus(v: Boolean) { subjectFocus = v; sp.edit().putBoolean("subjectFocus", v).apply() }
+    fun updateAutoBrain(v: Boolean) { autoBrain = v; sp.edit().putBoolean("autoBrain", v).apply() }
+    fun updateAutoLens(v: Boolean) { autoLens = v; sp.edit().putBoolean("autoLens", v).apply() }
     fun cycleTimer() {
         timerSeconds = when (timerSeconds) { 0 -> 3; 3 -> 10; else -> 0 }
         sp.edit().putInt("timer", timerSeconds).apply()

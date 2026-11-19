@@ -44,7 +44,7 @@ import com.iacamara.app.ui.theme.Type
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun SceneSheet(result: SceneResult, applied: Boolean, onApply: () -> Unit, onDismiss: () -> Unit) {
+fun SceneSheet(result: SceneResult, applied: Boolean, autoMode: Boolean = false, onApply: () -> Unit, onDismiss: () -> Unit) {
     val scene = result.scene
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -117,6 +117,19 @@ fun SceneSheet(result: SceneResult, applied: Boolean, onApply: () -> Unit, onDis
                     RecipeCell("BLANCOS", if (r.wb == WhiteBalance.AUTO) "Auto" else r.wb.label, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(18.dp))
+                if (autoMode) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                            .background(Palette.Cyan.copy(alpha = 0.12f)).padding(14.dp),
+                    ) {
+                        Icon(Icons.Rounded.AutoAwesome, null, tint = Palette.Cyan, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("El modo IA ya lo está aplicando por ti", style = Type.BodyStrong, color = Palette.Cyan)
+                    }
+                    return@let
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
@@ -140,7 +153,7 @@ fun SceneSheet(result: SceneResult, applied: Boolean, onApply: () -> Unit, onDis
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "En la próxima fase la app aplicará esto sola, sin que toques nada.",
+                    "En modo IA esto se aplica solo; en PRO te sirve como punto de partida.",
                     style = Type.Body, color = Palette.Fog,
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
