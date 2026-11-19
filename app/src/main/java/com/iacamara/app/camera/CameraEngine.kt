@@ -257,6 +257,11 @@ class CameraEngine(private val context: Context) {
     /** Exposición manual temporal (ISO, velocidad) para la toma oscura del HDR. */
     private var burstExposure: Pair<Int, Long>? = null
     private var frameAnalyzer: FrameAnalyzer? = null
+    private var analysisUseCase: ImageAnalysis? = null
+    /** Rotación que endereza los fotogramas en el marco vertical de la pantalla. */
+    @Volatile private var portraitRotation = 90
+    private var lastTrackId: Int? = null
+    private var imageMotion = 0f
     /** La IA ve nieve en la escena. */
     private var snowy = false
     /** El cerebro recomienda HDR ahora. */
@@ -417,6 +422,8 @@ class CameraEngine(private val context: Context) {
     fun setRotation(rotation: Int) {
         targetRotation = rotation
         imageCapture?.targetRotation = rotation
+        // La IA analiza la imagen como la sostienes (reconoce caras con el teléfono en horizontal).
+        analysisUseCase?.targetRotation = rotation
     }
 
     private fun rebind() {
@@ -470,6 +477,8 @@ class CameraEngine(private val context: Context) {
             handOff = { img -> handToAi(img) },
         )
         frameAnalyzer = fa
+        analysisUseCase = analysis
+        analysis.targetRotation = targetRotation
         analysis.setAnalyzer(analysisExecutor, fa)
 
         val cameraSelector = CameraSelector.Builder()
@@ -500,6 +509,8 @@ class CameraEngine(private val context: Context) {
             }
             camera = cam
             boundCameraId = lens.cameraId
+            portraitRotation = cam.cameraInfo.getSensorRotationDegrees(Surface.ROTATION_0)
+            fa.portraitRotation = portraitRotation
             aeAfLocked = false
             readCaps(cam)
             cam.cameraInfo.zoomState.observe(owner) { zoomRatio = it.zoomRatio }
@@ -726,6 +737,9 @@ class CameraEngine(private val context: Context) {
      */
     private fun onFrameStats(s: FrameStats) {
         stats = s
+        // Flujo óptico (8 veces por segundo): movimiento real del sujeto y de la imagen.
+        imageMotion += (s.globalMotion - imageMotion) * 0.5f
+        if (subject != null && s.subjectMotion != null) subjectSpeed += (s.subjectMotion - subjectSpeed) * 0.5f
         // Gris medio en espacio gamma ≈ 0.46; cada paso equivale a ×2^(1/2.2) en luminancia codificada.
         val target = 0.46f * 2f.pow(meterEv / 2.2f)
         val error = 2.2f * log2(target / s.meanLuma.coerceIn(0.01f, 0.99f))
@@ -786,7 +800,7 @@ class CameraEngine(private val context: Context) {
                 priorityIso = priorityIso, shutterValues = caps.shutterValues,
                 clippedArea = st.clippedArea, shadowArea = st.shadowArea,
                 subjectLuma = if (subject != null) st.subjectLuma else null,
-                snowy = snowy, p98 = st.p98,
+                snowy = snowy, p98 = st.p98, imageMotion = imageMotion,
             ),
             engagedBefore,
         )
@@ -840,7 +854,7 @@ class CameraEngine(private val context: Context) {
         if (now - lastAi < 330) return false
         lastAi = now
         val mirror = useFront
-        detector.process(img, mirror) { d -> mainHandler.post { onDetection(d) } }
+        detector.process(img, mirror, portraitRotation) { d -> mainHandler.post { onDetection(d) } }
         return true
     }
 
@@ -850,7 +864,11 @@ class CameraEngine(private val context: Context) {
         scene = result
         // Velocidad del sujeto (anchos de visor por segundo), suavizada.
         val now = System.currentTimeMillis()
-        if (subj != null && lastSubjectTime > 0 && lastSubjectX >= 0f) {
+        // Otro sujeto distinto (cambió el identificador de seguimiento): no es "movimiento".
+        if (subj?.trackId != null && subj.trackId != lastTrackId) lastSubjectTime = 0L
+        lastTrackId = subj?.trackId
+        val opticalFlow = stats?.subjectMotion != null
+        if (!opticalFlow && subj != null && lastSubjectTime > 0 && lastSubjectX >= 0f) {
             val dt = (now - lastSubjectTime) / 1000f
             if (dt in 0.05f..1.5f) {
                 val v = kotlin.math.hypot(subj.box.centerX() - lastSubjectX, subj.box.centerY() - lastSubjectY) / dt
@@ -863,7 +881,8 @@ class CameraEngine(private val context: Context) {
         subject = subj
         frameAnalyzer?.let { fa ->
             fa.regionMirrored = useFront
-            fa.region = subj?.box?.let { NormRect(it.left, it.top, it.right, it.bottom) }
+            // Se mide la luz en la piel (mejillas/nariz) o el centro del objeto, no en el recuadro entero.
+            fa.region = subj?.meterBox?.let { NormRect(it.left, it.top, it.right, it.bottom) }
         }
         snowy = d.labels.any { (label, conf) -> conf >= 0.6f && (label == "Snow" || label == "Skiing" || label == "Glacier") }
         maybeAutoLens(result.scene)

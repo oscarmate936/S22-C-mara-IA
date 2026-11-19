@@ -1,5 +1,6 @@
 package com.iacamara.app.ai
 
+import android.graphics.PointF
 import android.graphics.RectF
 import com.iacamara.app.camera.FrameStats
 import com.iacamara.app.camera.LiveExposure
@@ -138,10 +139,43 @@ enum class Scene(
 }
 
 /** Un sujeto en el visor, en coordenadas normalizadas 0..1. */
-data class Subject(val box: RectF, val label: String, val isFace: Boolean) {
+data class Subject(
+    val box: RectF,
+    val label: String,
+    val isFace: Boolean,
+    /** Punto medio entre los ojos (si la IA los encontró). */
+    val eyes: PointF? = null,
+    /** Zona donde se mide la luz: en un rostro, la piel (mejillas y nariz), sin pelo ni fondo. */
+    val meterBox: RectF = box,
+    /** Identificador de seguimiento: el mismo mientras sea el mismo sujeto. */
+    val trackId: Int? = null,
+) {
     /** Punto que debe ir sobre el punto fuerte (los ojos en un rostro). */
-    val anchorX: Float get() = box.centerX()
-    val anchorY: Float get() = if (isFace) box.top + box.height() * 0.42f else box.centerY()
+    val anchorX: Float get() = eyes?.x ?: box.centerX()
+    val anchorY: Float get() = eyes?.y ?: if (isFace) box.top + box.height() * 0.42f else box.centerY()
+
+    companion object {
+        /** Construye el sujeto "rostro" con la mayor precisión que permitan los puntos de la cara. */
+        fun fromFace(f: FaceInfo): Subject {
+            val b = f.box
+            val le = f.leftEye
+            val re = f.rightEye
+            if (le == null || re == null) {
+                // Sin puntos: centro de la cara (evita pelo arriba y fondo a los lados).
+                val meter = RectF(b.left + b.width() * 0.25f, b.top + b.height() * 0.40f, b.right - b.width() * 0.25f, b.top + b.height() * 0.80f)
+                return Subject(b, "Persona", true, null, meter, f.trackId)
+            }
+            val eyes = PointF((le.x + re.x) / 2, (le.y + re.y) / 2)
+            val eyeDist = kotlin.math.hypot(le.x - re.x, le.y - re.y).coerceAtLeast(0.01f)
+            val mouthY = f.mouth?.y ?: (eyes.y + eyeDist * 1.1f)
+            // Mejillas y nariz: entre los ojos (en horizontal) y desde debajo de los ojos hasta la boca.
+            val meter = RectF(
+                minOf(le.x, re.x), eyes.y + eyeDist * 0.25f,
+                maxOf(le.x, re.x), maxOf(mouthY - eyeDist * 0.1f, eyes.y + eyeDist * 0.5f),
+            )
+            return Subject(b, "Persona", true, eyes, meter, f.trackId)
+        }
+    }
 }
 
 data class SceneResult(val scene: Scene, val confidence: Float, val evidence: List<String>)
@@ -154,11 +188,24 @@ class SceneBrain {
     companion object {
         /** Calidez mínima del cielo para considerarlo un atardecer (calibrado con fotos reales). */
         const val SUNSET_SKY_WARMTH = 0.15f
+        /** Cuánto pesa una lectura que refuerza una escena (≈ 3 lecturas por segundo). */
+        const val MEMORY_RISE = 0.50f
+        /** Cuánto se olvida por cada lectura sin evidencia de nada (lento: evita parpadeos). */
+        const val MEMORY_FALL = 0.18f
+        /** Cuánto se olvida cuando hay evidencia clara de otra escena (rápido: responde al cambio). */
+        const val MEMORY_FALL_COMPETING = 0.40f
+        /** Evidencia mínima acumulada para afirmar una escena concreta. */
+        const val MIN_STRENGTH = 0.40f
+        /** "Fuerza" de la escena general (lo que hay que superar para salir de ella). */
+        const val GENERAL_STRENGTH = 0.30f
+        /** Ventaja necesaria para cambiar de escena (evita parpadeos). */
+        const val SWITCH_MARGIN = 0.08f
     }
 
     private var current: SceneResult = SceneResult(Scene.GENERAL, 0f, emptyList())
-    private var candidate: Scene = Scene.GENERAL
-    private var streak = 0
+    /** Evidencia acumulada por escena (media móvil): la IA "recuerda" los últimos segundos. */
+    private val memory = FloatArray(Scene.entries.size)
+    private val lastEvidence = HashMap<Scene, List<String>>()
 
     fun update(d: Detection, stats: FrameStats?, live: LiveExposure, front: Boolean): Pair<SceneResult, Subject?> {
         val scores = HashMap<Scene, Float>()
@@ -196,22 +243,47 @@ class SceneBrain {
         // Muy cerca: enfoque a menos de ~15 cm
         if (!front && live.focusDiopters > 6.5f) add(Scene.MACRO, 0.8f, "enfoque a ${(100f / live.focusDiopters).toInt()} cm")
 
-        val best = scores.maxByOrNull { it.value }
-        val bestScene = if (best != null && best.value >= 0.55f) best.key else Scene.GENERAL
-        val bestScore = best?.value ?: 0f
-
-        // Histéresis: cambia de escena solo si se repite varias veces o es mucho más segura.
-        if (bestScene == candidate) streak++ else { candidate = bestScene; streak = 1 }
-        val clearlyBetter = bestScore > current.confidence + 0.25f
-        if (bestScene == current.scene || streak >= 3 || clearlyBetter) {
-            current = SceneResult(bestScene, bestScore, evidence[bestScene]?.take(3) ?: emptyList())
+        // Fusión temporal: cada lectura suma a la memoria de cada escena; una lectura dudosa
+        // aislada no basta para cambiar, y una evidencia constante se impone en ~1 segundo.
+        // ¿Hay evidencia clara de alguna escena en esta lectura?
+        val strongest = scores.values.maxOrNull() ?: 0f
+        for (sc in Scene.entries) {
+            if (sc == Scene.GENERAL) continue
+            val v = scores[sc] ?: 0f
+            // Se convence rápido. Olvida despacio si simplemente no ve nada claro (medio segundo
+            // sin ver al gato no lo borra), pero rápido si ve claramente OTRA cosa.
+            val rate = when {
+                v > memory[sc.ordinal] -> MEMORY_RISE
+                strongest >= 0.55f && v < strongest -> MEMORY_FALL_COMPETING
+                else -> MEMORY_FALL
+            }
+            memory[sc.ordinal] += (v - memory[sc.ordinal]) * rate
+            evidence[sc]?.let { lastEvidence[sc] = it.take(3) }
+        }
+        val best = Scene.entries.filter { it != Scene.GENERAL }.maxByOrNull { memory[it.ordinal] }!!
+        val bestStrength = memory[best.ordinal]
+        val candidate = if (bestStrength >= MIN_STRENGTH) best else Scene.GENERAL
+        fun strength(sc: Scene) = if (sc == Scene.GENERAL) GENERAL_STRENGTH else memory[sc.ordinal]
+        if (candidate == current.scene || strength(candidate) > strength(current.scene) + SWITCH_MARGIN) {
+            current = SceneResult(
+                candidate,
+                if (candidate == Scene.GENERAL) 1f - bestStrength else bestStrength,
+                if (candidate == Scene.GENERAL) emptyList() else lastEvidence[candidate] ?: emptyList(),
+            )
+        } else {
+            current = current.copy(confidence = strength(current.scene))
         }
 
-        // Sujeto: rostro > objeto principal
+        // Sujeto: rostro (con sus puntos) > objeto principal
+        val faceInfo = d.faceDetails.maxByOrNull { it.box.width() * it.box.height() }
         val subject = when {
-            face != null -> Subject(face, "Persona", true)
-            d.prominent != null && d.prominent.width() * d.prominent.height() in 0.01f..0.85f ->
-                Subject(d.prominent, subjectName(d), false)
+            faceInfo != null -> Subject.fromFace(faceInfo)
+            d.prominent != null && d.prominent.width() * d.prominent.height() in 0.01f..0.85f -> {
+                val p = d.prominent
+                // Centro del objeto (los bordes del recuadro suelen incluir fondo).
+                val meter = RectF(p.left + p.width() * 0.2f, p.top + p.height() * 0.2f, p.right - p.width() * 0.2f, p.bottom - p.height() * 0.2f)
+                Subject(p, subjectName(d), false, null, meter, d.prominentTrackId)
+            }
             else -> null
         }
         return current to subject

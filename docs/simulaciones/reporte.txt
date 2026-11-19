@@ -6,13 +6,13 @@ ALINEACIÓN  rocket.jpg               error medio 0.00 px
 ALINEACIÓN  hubble_deep_field.jpg    error medio 0.00 px
 ALINEACIÓN  aciertos (error ≤ 1 px): 30/30
 === DECISIÓN DE ESCENA (lo que devolvería ML Kit + física real de cada foto) ===
-astronauta (rostro)            → Retrato                 93%  sujeto: Persona   (por: rostro)
-gato Chelsea                   → Mascota                 93%  sujeto: Gato      (por: Gato, Mascota)
-taza de café                   → Comida                  65%  sujeto: Café      (por: Café, Comida)
-cielo nocturno (Hubble)        → Noche · Poca luz        90%  sujeto: —         (por: poca luz)
-atardecer (cielo naranja)      → Atardecer · Amanecer    97%  sujeto: —         (por: cielo cálido)
-cohete, cielo azul de día      → Escena general          54%  sujeto: —         (por: )
-flor a 10 cm                   → Macro · Detalle         80%  sujeto: Flor      (por: Flor, enfoque a 10 cm)
+astronauta (rostro)            → Retrato                 87%  sujeto: Persona   (por: rostro)
+gato Chelsea                   → Mascota                 87%  sujeto: Gato      (por: Gato, Mascota)
+taza de café                   → Comida                  61%  sujeto: Café      (por: Café, Comida)
+cielo nocturno (Hubble)        → Noche · Poca luz        84%  sujeto: —         (por: poca luz)
+atardecer (cielo naranja)      → Atardecer · Amanecer    90%  sujeto: —         (por: cielo cálido)
+cohete, cielo azul de día      → Paisaje                 50%  sujeto: —         (por: Cielo, Nubes)
+flor a 10 cm                   → Macro · Detalle         75%  sujeto: Flor      (por: Flor, enfoque a 10 cm)
 estabilidad: mascota → (lectura vacía) → Mascota → Mascota
 === FOTÓMETRO Y COLOR (analizador real, fotos convertidas a YUV como la cámara) ===
 astronaut.png            luz media 0.45  fotómetro  -0.1 EV  calidez +0.116  cielo/luces +0.036  altas luces  0.9%
@@ -42,5 +42,15 @@ NOCHE  rocket_f150.0_rot                  1 toma:  22.8 dB   8 tomas:  28.2 dB  
 NOCHE  coffee_f150.0_fantasma             1 toma:  23.7 dB   8 tomas:  29.9 dB   mejora:  +6.2 dB
        fantasma: error medio en la trayectoria del objeto = 5.5 niveles (de 255)
 === MODO NOCHE DE PUNTA A PUNTA (JPEG real → BurstProcessor) ===
-tomas usadas: 8/8   progreso informado: [1, 2, 3, 4, 5, 6, 7, 8]   tiempo: 295 ms (600×400)
+tomas usadas: 8/8   progreso informado: [1, 2, 3, 4, 5, 6, 7, 8]   tiempo: 215 ms (600×400)
 1 toma: 27.2 dB   8 tomas combinadas: 32.7 dB   mejora +5.5 dB
+=== FUSIÓN TEMPORAL DE ESCENAS (lecturas de IA con ruido real) ===
+mascota con 25% de lecturas vacías y 15% confundidas con comida: aciertos 56/56 (tras 1.3 s), cambios de escena: 1
+al apuntar a un postre, cambia a «Comida» en 1 lecturas (≈ 0.3 s)
+=== FLUJO ÓPTICO (8 análisis/s, sujeto = rostro que se mueve sobre un fondo) ===
+FLUJO  todo quieto                global: medido 0.000 / real 0.000 anchos/s   sujeto: medido 0.000 / real 0.000
+FLUJO  pulso leve (1.5 px)        global: medido 0.046 / real 0.045 anchos/s   sujeto: medido 0.002 / real 0.000
+FLUJO  persona caminando          global: medido 0.004 / real 0.000 anchos/s   sujeto: medido 0.223 / real 0.225
+FLUJO  mascota corriendo + paneo  global: medido 0.072 / real 0.075 anchos/s   sujeto: medido 0.555 / real 0.559
+ORIENTACIÓN  80/80 puntos devueltos exactamente al marco vertical (0°, 90°, 180°, 270°)
+ROSTRO  ancla en los ojos (0.495, 0.240); zona de medición [0.45,0.2625][0.54,0.351] dentro de la cara: true

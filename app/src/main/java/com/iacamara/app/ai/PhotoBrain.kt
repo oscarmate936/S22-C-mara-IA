@@ -41,6 +41,8 @@ class BrainInput(
     val snowy: Boolean = false,
     /** Percentil 98 de la luz (0..1). */
     val p98: Float = 0.9f,
+    /** Movimiento de toda la imagen en el encuadre (anchos/s), medido por flujo óptico. */
+    val imageMotion: Float = 0f,
 )
 
 class BrainDecision(
@@ -116,7 +118,7 @@ class PhotoBrain {
         }
         // 4) Contraste que el sensor no abarca: cielo quemado Y sombras profundas a la vez.
         if (i.clippedArea > BIG_CLIP && i.shadowArea > 0.08f && i.scene != Scene.SUNSET && i.scene != Scene.NIGHT) hdr = true
-        if (i.subjectSpeed > 0.15f || i.gyro > 0.15f) hdr = false // HDR con movimiento deja fantasmas
+        if (i.subjectSpeed > 0.15f || i.gyro > 0.15f || i.imageMotion > 0.12f) hdr = false // HDR con movimiento deja fantasmas
 
         targetEv = targetEv.coerceIn(-2f, 2f)
         // Cambios suaves (máx. 1/3 de paso por ciclo) para que la imagen no "bombee".
@@ -146,6 +148,8 @@ class PhotoBrain {
         }
         if (i.subjectSpeed > 0.04f) limit(0.003 / i.subjectSpeed, "el sujeto se mueve")
         if (i.gyro > 0.03f) limit(0.002 * hfov / i.gyro, "compenso el movimiento de tu mano")
+        // Medido en la propia imagen: incluye pulso y paneo tal como afectan a la foto.
+        if (i.imageMotion > 0.03f) limit(0.002 / i.imageMotion, "la imagen se desplaza: compenso")
 
         var shutter: Long? = null
         // Si ya estamos en exposición larga, el ISO bajó justamente por eso: no soltarla (evita oscilar).
