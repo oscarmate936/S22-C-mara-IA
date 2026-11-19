@@ -37,6 +37,9 @@ class Prefs(context: Context) {
         private set
     var raw by mutableStateOf(sp.getBoolean("raw", false))
         private set
+    /** Ya se mostró el aviso de cómo ajustar en PRO. */
+    var proHintShown by mutableStateOf(sp.getBoolean("proHint", false))
+        private set
     var timerSeconds by mutableStateOf(sp.getInt("timer", 0))
         private set
 
@@ -54,6 +57,7 @@ class Prefs(context: Context) {
     fun updateTorchFlash(v: Boolean) { torchFlash = v; sp.edit().putBoolean("torchFlash", v).apply() }
     fun updateMultiShot(v: Boolean) { multiShot = v; sp.edit().putBoolean("multiShot", v).apply() }
     fun updateRaw(v: Boolean) { raw = v; sp.edit().putBoolean("raw", v).apply() }
+    fun markProHintShown() { proHintShown = true; sp.edit().putBoolean("proHint", true).apply() }
     fun cycleTimer() {
         timerSeconds = when (timerSeconds) { 0 -> 3; 3 -> 10; else -> 0 }
         sp.edit().putInt("timer", timerSeconds).apply()

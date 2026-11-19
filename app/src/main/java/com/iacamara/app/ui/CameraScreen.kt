@@ -13,6 +13,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
@@ -38,7 +40,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Cameraswitch
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.Layers
@@ -147,6 +151,7 @@ fun CameraScreen(
 
     var showSettings by remember { mutableStateOf(false) }
     var showScene by remember { mutableStateOf(false) }
+    var showProHint by remember { mutableStateOf(false) }
     var countdown by remember { mutableIntStateOf(0) }
     var reticle by remember { mutableStateOf<Offset?>(null) }
     var reticleKey by remember { mutableIntStateOf(0) }
@@ -185,6 +190,9 @@ fun CameraScreen(
     }
     LaunchedEffect(Unit) {
         snapshotFlow { sensors.shake to sensors.steady }.collect { (s, st) -> engine.updateMotion(s, st) }
+    }
+    LaunchedEffect(showProHint) {
+        if (showProHint) { delay(4000); showProHint = false }
     }
     LaunchedEffect(engine.lensNotice) {
         if (engine.lensNotice != null) { delay(4500); engine.lensNotice = null }
@@ -315,6 +323,9 @@ fun CameraScreen(
                 Modifier.align(Alignment.TopCenter).padding(top = if (wide) headerHeight + 58.dp else 60.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                AnimatedVisibility(showProHint && pro && engine.selectedParam == null, enter = fadeIn() + slideInVertically(), exit = fadeOut()) {
+                    InfoPill("TOCA UN VALOR DE ARRIBA PARA AJUSTARLO", Palette.Amber, Icons.Rounded.ArrowUpward, Modifier.padding(bottom = 6.dp))
+                }
                 AnimatedVisibility(engine.aeAfLocked, enter = fadeIn() + slideInVertically(), exit = fadeOut()) {
                     InfoPill("BLOQUEO AE/AF", Palette.Amber, Icons.Rounded.Lock) {
                         engine.unlockFocus(); reticle = null
@@ -410,7 +421,10 @@ fun CameraScreen(
             ModeSwitch(engine.mode, autoLabel = if (prefs.aiScene && prefs.autoBrain) "IA" else "AUTO") {
                 if (prefs.haptics) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 engine.switchMode(it)
-                if (it == CaptureMode.PRO && engine.selectedParam == null) engine.selectedParam = Param.SHUTTER
+                if (it == CaptureMode.PRO && !prefs.proHintShown) {
+                    showProHint = true
+                    prefs.markProHintShown()
+                }
             }
             Spacer(Modifier.height(18.dp))
             Row(
@@ -600,6 +614,17 @@ private fun ParamPanel(engine: CameraEngine, param: Param, haptics: Boolean) {
                     Param.FOCUS -> engine.setFocus(null)
                     Param.EV -> engine.setEv(0f)
                 }
+            }
+            Spacer(Modifier.width(6.dp))
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Palette.Ink.copy(alpha = 0.4f))
+                    .clickable { engine.selectedParam = null },
+            ) {
+                Icon(Icons.Rounded.Close, "Cerrar", tint = Palette.Mist, modifier = Modifier.size(18.dp))
             }
         }
         Spacer(Modifier.height(6.dp))
