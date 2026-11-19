@@ -35,8 +35,13 @@ class FrameStats(
     val globalMotion: Float = 0f,
     /** Movimiento del sujeto en el encuadre (anchos por segundo), medido píxel a píxel. */
     val subjectMotion: Float? = null,
-    /** Horizonte real de la imagen (si se ve uno claro). */
+    /** Horizonte real de la imagen (si se ve uno claro), en el marco de cómo se sostiene el teléfono. */
     val horizon: Horizon? = null,
+    /**
+     * Giro (grados, horario) del marco "como sostienes el teléfono" respecto al marco vertical
+     * de la pantalla: 0 en vertical, 90/270 en horizontal.
+     */
+    val deviceDelta: Int = 0,
 )
 
 /** Rectángulo normalizado 0..1 en el marco del visor (vertical, como se ve en pantalla). */
@@ -133,8 +138,11 @@ class FrameAnalyzer(
         }
         val subjectLuma = region?.let { measureRegion(image, it) }
         val (globalMotion, subjectMotion) = measureMotion(image)
+        // El horizonte se busca tal como sostienes el teléfono (en horizontal también).
+        val deviceRotation = runCatching { image.imageInfo.rotationDegrees }.getOrNull() ?: rotationOf(image)
+        val deviceDelta = (((deviceRotation - rotationOf(image)) % 360) + 360) % 360
         val horizon = lastSmall?.let { sm ->
-            val (pl, pw, ph) = HorizonDetector.toPortrait(sm, lastSmallW, lastSmallH, rotationOf(image))
+            val (pl, pw, ph) = HorizonDetector.toPortrait(sm, lastSmallW, lastSmallH, deviceRotation)
             HorizonDetector.detect(pl, pw, ph)?.takeIf { it.confidence >= 0.45f }
         }
 
@@ -198,6 +206,7 @@ class FrameAnalyzer(
             globalMotion = globalMotion,
             subjectMotion = subjectMotion,
             horizon = horizon,
+            deviceDelta = deviceDelta,
         )
     }
 

@@ -63,3 +63,4 @@ Paleta negro tinta con paneles de vidrio. El ámbar marca la acción y los valor
 - Kotlin + Jetpack Compose + CameraX/Camera2. minSdk 29, targetSdk 35.
 - `./gradlew assembleRelease` compila el APK.
 - `./gradlew testDebugUnitTest` regenera las capturas de la interfaz en `app/build/screenshots/` (Robolectric).
+- `tools/descargar_imagenes.sh` descarga ~18 fotos reales de proyectos públicos de visión por computadora (retratos, animales, paisajes, calles) a `app/build/fotos_prueba/`; con ellas se ejecuta además la batería `RealPhotoSuiteTest` (horizonte, modo noche, HDR y macro). No se suben al repositorio.

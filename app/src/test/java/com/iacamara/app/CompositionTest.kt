@@ -112,12 +112,13 @@ class CompositionTest {
             var hy = rnd.nextFloat() * 0.7f + 0.15f
             var tilt = (rnd.nextFloat() - 0.5f) * 10f
             for (k in 0 until 80) {
-                val plan = Composer.plan(Scene.SUNSET, null, Horizon(hy, tilt, 0.9f))
+                // La inclinación la mide el nivel del teléfono (horario positivo).
+                val plan = Composer.plan(Scene.SUNSET, null, Horizon(hy, 0f, 0.9f), deviceTiltCw = tilt)
                 if (plan.aligned) { hOk++; break }
                 val t = plan.instruction!!.text
                 when {
-                    "↻" in t -> tilt -= 0.5f // girar en sentido horario endereza un horizonte que baja a la derecha
-                    "↺" in t -> tilt += 0.5f
+                    "↺" in t -> tilt -= 0.5f // girar en sentido antihorario corrige un teléfono girado en horario
+                    "↻" in t -> tilt += 0.5f
                     "abajo" in t -> hy -= 0.02f
                     "arriba" in t -> hy += 0.02f
                 }
@@ -191,5 +192,55 @@ class CompositionTest {
         assertEquals(sh, pw); assertEquals(sw, ph)
         assertEquals(200, p[0].toInt() and 0xFF) // arriba: cielo
         assertEquals(30, p[(ph - 1) * pw].toInt() and 0xFF) // abajo: tierra
+    }
+
+    /**
+     * Teléfono en horizontal (90° y 270°) y cámara frontal (espejada): se simula a una persona que
+     * sigue las indicaciones con el teléfono como lo sostiene, y debe llegar a «BIEN COMPUESTO».
+     */
+    @Test fun indicacionesConElTelefonoDeLadoYFrontal() {
+        val rnd = Random(17)
+        for ((delta, mirrored) in listOf(90 to false, 270 to false, 0 to true, 90 to true)) {
+            var ok = 0
+            repeat(100) {
+                // Posición de los ojos y mirada en el marco del teléfono (como lo ve la persona).
+                var xd = rnd.nextFloat() * 0.6f + 0.2f
+                var yd = rnd.nextFloat() * 0.6f + 0.2f
+                val lookDev = if (rnd.nextBoolean()) PointF(if (rnd.nextBoolean()) 0.7f else -0.7f, 0f) else null
+                for (k in 0 until 80) {
+                    // Lo que recibe el compositor: todo en el marco de la pantalla.
+                    val (px, py) = com.iacamara.app.ai.Orient.toPortrait(xd, yd, delta)
+                    val look = lookDev?.let { com.iacamara.app.ai.Orient.vectorToPortrait(it.x, it.y, delta, false) }
+                    val box = RectF(px - 0.08f, py - 0.08f, px + 0.08f, py + 0.08f)
+                    val subj = Subject(box, "Persona", true, PointF(px, py), box, 1, look)
+                    val plan = Composer.plan(Scene.PORTRAIT, subj, null, deviceDelta = delta, mirrored = mirrored)
+                    if (plan.aligned) { ok++; break }
+                    val t = plan.instruction!!.text
+                    val step = 0.02f
+                    when {
+                        // Trasera: girar a la derecha mueve la escena a la izquierda. Frontal (espejo): a la derecha.
+                        "derecha" in t -> xd += if (mirrored) step else -step
+                        "izquierda" in t -> xd += if (mirrored) -step else step
+                        "abajo" in t -> yd -= step
+                        "arriba" in t -> yd += step
+                    }
+                }
+            }
+            line("ORIENTACIÓN  teléfono a $delta°${if (mirrored) " · cámara frontal" else ""}: bien compuesto en $ok/100")
+            assertEquals(100, ok)
+        }
+        // En horizontal, la guía del horizonte se dibuja vertical en la pantalla (paralela al paisaje real).
+        val plan = Composer.plan(Scene.SUNSET, null, Horizon(0.5f, 0f, 0.9f), deviceDelta = 90)
+        val (a, b) = plan.targetLine!!
+        assertEquals(a.x, b.x, 1e-4f)
+        line("ORIENTACIÓN  con el teléfono de lado, la guía del horizonte queda paralela al paisaje ✓")
+        flush("reporte_composicion_orientacion.txt")
+    }
+
+    @Test fun colinasInclinadasNoPidenGirar() {
+        // Horizonte de colinas que sube 6° pero el teléfono está nivelado: no hay que girar nada.
+        val plan = Composer.plan(Scene.LANDSCAPE, null, Horizon(1f / 3f, -6f, 0.9f), deviceTiltCw = 0.3f)
+        assertTrue(plan.aligned)
+        assertNull(plan.instruction)
     }
 }

@@ -20,6 +20,22 @@ object Orient {
         else -> u to v
     }
 
+    /** Inversa de [toPortrait]: del marco vertical al marco girado [delta] grados. */
+    fun fromPortrait(u: Float, v: Float, delta: Int): Pair<Float, Float> = when (((delta % 360) + 360) % 360) {
+        90 -> (1f - v) to u
+        180 -> (1f - u) to (1f - v)
+        270 -> v to (1f - u)
+        else -> u to v
+    }
+
+    /** Inversa de [vectorToPortrait] (sin espejo). */
+    fun vectorFromPortrait(dx: Float, dy: Float, delta: Int): PointF = when (((delta % 360) + 360) % 360) {
+        90 -> PointF(-dy, dx)
+        180 -> PointF(-dx, -dy)
+        270 -> PointF(dy, -dx)
+        else -> PointF(dx, dy)
+    }
+
     fun rectToPortrait(l: Float, t: Float, r: Float, b: Float, delta: Int, mirror: Boolean): RectF {
         val a = toPortrait(l, t, delta)
         val c = toPortrait(r, b, delta)

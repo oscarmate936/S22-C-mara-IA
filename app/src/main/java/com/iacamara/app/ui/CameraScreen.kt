@@ -270,8 +270,14 @@ fun CameraScreen(
             )
             // Plan de composición de la IA (guía, punto del sujeto, horizonte e indicación).
             val plan = if (prefs.aiScene) com.iacamara.app.ai.Composer.plan(
-                engine.scene?.scene ?: com.iacamara.app.ai.Scene.GENERAL,
-                engine.subject, engine.stats?.horizon, engine.subjectHeading,
+                scene = engine.scene?.scene ?: com.iacamara.app.ai.Scene.GENERAL,
+                subject = engine.subject,
+                horizon = engine.stats?.horizon,
+                heading = engine.subjectHeading,
+                deviceDelta = engine.stats?.deviceDelta ?: 0,
+                mirrored = engine.useFront,
+                deviceTiltCw = if (sensors.isFlat) null else sensors.tilt,
+                aspectHW = if (wide) 16f / 9f else 4f / 3f,
             ) else null
             GridOverlay(prefs.grid, aiGuide = plan?.guide)
             if (prefs.level) LevelIndicator(sensors.tilt, sensors.isFlat, prefs.haptics)

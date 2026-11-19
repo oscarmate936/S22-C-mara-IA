@@ -100,35 +100,36 @@ fun SubjectBox(subject: Subject?) {
 @Composable
 fun CompositionCoach(plan: CompositionPlan, haptics: Boolean) {
     val haptic = LocalHapticFeedback.current
-    val hasGuide = plan.target != null || plan.horizonTargetY != null
+    val hasGuide = plan.target != null || plan.targetLine != null
     LaunchedEffect(plan.aligned && hasGuide) { if (plan.aligned && hasGuide && haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
     val color by animateColorAsState(if (plan.aligned) Palette.Level else Palette.Cyan, label = "coach")
 
-    plan.horizonTargetY?.let { ty ->
+    plan.targetLine?.let { (t0, t1) ->
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val hPx = with(LocalDensity.current) { maxHeight.toPx() }
+            val density = LocalDensity.current
+            val wPx = with(density) { maxWidth.toPx() }
+            val hPx = with(density) { maxHeight.toPx() }
             Canvas(Modifier.fillMaxSize()) {
-                val py = size.height * ty
-                // Guía: dónde debe quedar el horizonte
-                drawLine(color.copy(alpha = 0.22f), Offset(0f, py), Offset(size.width, py), 6.dp.toPx())
-                drawLine(color, Offset(0f, py), Offset(size.width, py), 1.4.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f)))
-                // Horizonte real detectado (con su inclinación)
-                plan.horizon?.let { hz ->
-                    val slope = kotlin.math.tan(Math.toRadians(hz.tiltDeg.toDouble())).toFloat()
-                    val cy = size.height * hz.y
-                    val half = size.width / 2
-                    val a = Offset(0f, cy - slope * half)
-                    val b = Offset(size.width, cy + slope * half)
-                    drawLine(Palette.Paper.copy(alpha = 0.35f), a + Offset(0f, 1.5f), b + Offset(0f, 1.5f), 2.5.dp.toPx())
-                    drawLine(if (plan.aligned) Palette.Level else Palette.Amber, a, b, 2.dp.toPx(), cap = StrokeCap.Round)
+                val a = Offset(t0.x * size.width, t0.y * size.height)
+                val b = Offset(t1.x * size.width, t1.y * size.height)
+                // Guía: dónde debe quedar el horizonte (sigue la orientación del teléfono)
+                drawLine(color.copy(alpha = 0.22f), a, b, 6.dp.toPx())
+                drawLine(color, a, b, 1.4.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f)))
+                // Horizonte real detectado
+                plan.horizonLine?.let { (h0, h1) ->
+                    val c = Offset(h0.x * size.width, h0.y * size.height)
+                    val e = Offset(h1.x * size.width, h1.y * size.height)
+                    drawLine(Palette.Ink.copy(alpha = 0.35f), c + Offset(0f, 1.5f), e + Offset(0f, 1.5f), 2.5.dp.toPx())
+                    drawLine(if (plan.aligned) Palette.Level else Palette.Amber, c, e, 2.dp.toPx(), cap = StrokeCap.Round)
                 }
             }
+            val lx = (minOf(t0.x, t1.x) * wPx).coerceIn(0f, wPx - 1f)
+            val ly = (minOf(t0.y, t1.y) * hPx).coerceIn(0f, hPx - 1f)
             Text(
-                if (plan.aligned && plan.horizon != null) "HORIZONTE PERFECTO" else "HORIZONTE AQUÍ",
+                if (plan.aligned && plan.horizonFound) "HORIZONTE PERFECTO" else "HORIZONTE AQUÍ",
                 style = Type.Label.copy(fontSize = 9.sp),
                 color = color,
-                modifier = Modifier.offset { IntOffset(12.dp.roundToPx(), (hPx * ty - 18.dp.toPx()).roundToInt()) },
+                modifier = Modifier.offset { IntOffset((lx + 12.dp.toPx()).roundToInt(), (ly - 18.dp.toPx()).roundToInt().coerceAtLeast(4)) },
             )
         }
     }

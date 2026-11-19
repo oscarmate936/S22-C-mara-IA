@@ -69,8 +69,37 @@ object HorizonDetector {
         val yCenter = (a + b * w / 2f) / h
         val tilt = Math.toDegrees(atan(b.toDouble())).toFloat()
         val meanStrength = used.map { strengths[it] }.average().toFloat()
-        val confidence = (used.size / STRIPS.toFloat()) * (meanStrength / 30f).coerceAtMost(1f)
+        var confidence = (used.size / STRIPS.toFloat()) * (meanStrength / 30f).coerceAtMost(1f)
+        // ¿Lo de arriba es cielo de verdad? El cielo es liso (poca textura) comparado con la tierra;
+        // follaje, una cerca, una fruta o una pared con dibujo tienen mucha textura y se descartan.
+        val (texAbove, texBelow) = textureAroundLine(luma, w, h, a, b)
+        val skyLike = texAbove <= 7f || texAbove <= 0.55f * texBelow
+        if (!skyLike) confidence *= 0.3f
         return Horizon(yCenter.coerceIn(0f, 1f), tilt, confidence.coerceIn(0f, 1f))
+    }
+
+    /** Textura media (diferencia entre píxeles vecinos) en franjas por encima y por debajo de la línea. */
+    private fun textureAroundLine(luma: ByteArray, w: Int, h: Int, a: Float, b: Float): Pair<Float, Float> {
+        val band = (h * 0.18f).toInt().coerceAtLeast(3)
+        var ta = 0f; var na = 0
+        var tb = 0f; var nb = 0
+        for (x in 1 until w - 1) {
+            val yl = (a + b * x).toInt()
+            for (y in maxOf(1, yl - band) until yl - 2) {
+                if (y >= h - 1) break
+                ta += grad(luma, w, x, y); na++
+            }
+            for (y in yl + 3 until minOf(h - 1, yl + band)) {
+                if (y < 1) continue
+                tb += grad(luma, w, x, y); nb++
+            }
+        }
+        return (if (na > 0) ta / na else 99f) to (if (nb > 0) tb / nb else 0f)
+    }
+
+    private fun grad(l: ByteArray, w: Int, x: Int, y: Int): Float {
+        val c = l[y * w + x].toInt() and 0xFF
+        return (abs(c - (l[y * w + x + 1].toInt() and 0xFF)) + abs(c - (l[(y + 1) * w + x].toInt() and 0xFF))) / 2f
     }
 
     /** Recta y = a + b·x por mínimos cuadrados. */
