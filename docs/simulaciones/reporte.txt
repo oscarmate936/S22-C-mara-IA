@@ -23,6 +23,14 @@ hubble_deep_field.jpg    luz media 0.07  fotómetro  -5.8 EV  calidez -0.002  ci
 chelsea oscurecida 2 pasos: fotómetro +0.04 → -1.97 (diferencia -2.01, ideal −2.00)
 chelsea sobreexpuesta 2 pasos: altas luces 20.2% (aviso si > 3%)
 atardecer sintético: cielo/luces +0.422 (umbral de la IA 0.15)
+=== MODO IA EN CIRCUITO CERRADO: cámara sola vs. con IA v2 ===
+CONTRALUZ  cara: cámara sola 0.41 → con IA 0.50 (ideal ≈ 0.50)   compensación +0.4 EV   HDR recomendado: true
+           decisiones: HDR (cielo y sombras con detalle a la vez), +0.4 EV (cara a contraluz: la ilumino)
+HDR        píxeles quemados: 16.6% → 0.3%   cara: 0.50 → 0.50   relación de luz medida 8.00 (real 8.00)
+NIEVE      brillo de la nieve: cámara sola 0.50 (gris) → con IA 0.93 (blanca; ideal ≈ 0.85-0.92)   +2.0 EV
+           nieve quemada (blanco puro): 0.0%
+LÁMPARA    quemado: 2.5% de píxeles pero 2.1% del encuadre en zonas grandes → IA v2 +0.0 EV (IA v1 habría hecho -0.4 EV y oscurecido la habitación)
+CIELO      píxeles quemados: cámara sola 0.8% → con IA 0.6%   -0.3 EV   (-0.3 EV (cielo con detalle))
 === MACRO+ (5 distancias de enfoque, pulso ±4 px) ===
 MACRO  gato_inclinado         mejor toma sola:  26.3 dB (nitidez 19.7)   apilado:  29.0 dB (nitidez 22.5)   original: nitidez 13.3
 MACRO  taza_redonda           mejor toma sola:  22.3 dB (nitidez 33.4)   apilado:  25.0 dB (nitidez 40.5)   original: nitidez 19.7
@@ -34,5 +42,5 @@ NOCHE  rocket_f150.0_rot                  1 toma:  22.8 dB   8 tomas:  28.2 dB  
 NOCHE  coffee_f150.0_fantasma             1 toma:  23.7 dB   8 tomas:  29.9 dB   mejora:  +6.2 dB
        fantasma: error medio en la trayectoria del objeto = 5.5 niveles (de 255)
 === MODO NOCHE DE PUNTA A PUNTA (JPEG real → BurstProcessor) ===
-tomas usadas: 8/8   progreso informado: [1, 2, 3, 4, 5, 6, 7, 8]   tiempo: 315 ms (600×400)
+tomas usadas: 8/8   progreso informado: [1, 2, 3, 4, 5, 6, 7, 8]   tiempo: 295 ms (600×400)
 1 toma: 27.2 dB   8 tomas combinadas: 32.7 dB   mejora +5.5 dB

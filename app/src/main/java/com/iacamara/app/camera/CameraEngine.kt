@@ -68,7 +68,7 @@ enum class Param { ISO, SHUTTER, WB, FOCUS, EV }
 enum class FlashSetting { OFF, AUTO, ON }
 
 /** Cómo se toma la foto. AUTO = lo decide la IA. */
-enum class ShotSetting(val label: String) { AUTO("Auto"), SINGLE("1 toma"), NIGHT("Noche"), MACRO("Macro+") }
+enum class ShotSetting(val label: String) { AUTO("Auto"), SINGLE("1 toma"), NIGHT("Noche"), HDR("HDR"), MACRO("Macro+") }
 enum class AspectSetting(val label: String) { RATIO_4_3("4:3"), RATIO_16_9("16:9") }
 
 /**
@@ -254,6 +254,13 @@ class CameraEngine(private val context: Context) {
     private var burstLock = false
     /** Un cambio de lente/formato pedido durante una captura se aplica al terminar. */
     private var pendingRebind = false
+    /** Exposición manual temporal (ISO, velocidad) para la toma oscura del HDR. */
+    private var burstExposure: Pair<Int, Long>? = null
+    private var frameAnalyzer: FrameAnalyzer? = null
+    /** La IA ve nieve en la escena. */
+    private var snowy = false
+    /** El cerebro recomienda HDR ahora. */
+    private var brainWantsHdr = false
     private var lastBrainRun = 0L
     private var gyro = 0f
     private var steady = false
@@ -458,13 +465,12 @@ class CameraEngine(private val context: Context) {
                     .build(),
             )
             .build()
-        analysis.setAnalyzer(
-            analysisExecutor,
-            FrameAnalyzer(
-                onStats = { s -> mainHandler.post { onFrameStats(s) } },
-                handOff = { img -> handToAi(img) },
-            ),
+        val fa = FrameAnalyzer(
+            onStats = { s -> mainHandler.post { onFrameStats(s) } },
+            handOff = { img -> handToAi(img) },
         )
+        frameAnalyzer = fa
+        analysis.setAnalyzer(analysisExecutor, fa)
 
         val cameraSelector = CameraSelector.Builder()
             .addCameraFilter { infos -> infos.filter { Camera2CameraInfo.from(it).cameraId == lens.cameraId } }
@@ -625,6 +631,7 @@ class CameraEngine(private val context: Context) {
         brainEv = 0f
         brainWb = WhiteBalance.AUTO
         brainShutterNs = null
+        brainWantsHdr = false
         brainReasons = emptyList()
         photoBrain.reset()
     }
@@ -632,6 +639,18 @@ class CameraEngine(private val context: Context) {
     private fun applyControls() {
         val cam = camera ?: return
         val c2 = Camera2CameraControl.from(cam.cameraControl)
+        burstExposure?.let { (iso, shutter) ->
+            c2.setCaptureRequestOptions(
+                CaptureRequestOptions.Builder()
+                    .setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
+                    .setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, iso)
+                    .setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, shutter)
+                    .setCaptureRequestOption(CaptureRequest.SENSOR_FRAME_DURATION, maxOf(shutter, 33_333_333L))
+                    .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK, true)
+                    .build(),
+            )
+            return
+        }
         val evIndex = (evCompensation / caps.evStep).roundToInt()
 
         if (mode == CaptureMode.AUTO) {
@@ -765,9 +784,13 @@ class CameraEngine(private val context: Context) {
                 liveIso = live.iso, aeShutterNs = live.shutterNs,
                 isoMin = caps.isoValues.firstOrNull() ?: 50, isoMax = caps.isoValues.lastOrNull() ?: 3200,
                 priorityIso = priorityIso, shutterValues = caps.shutterValues,
+                clippedArea = st.clippedArea, shadowArea = st.shadowArea,
+                subjectLuma = if (subject != null) st.subjectLuma else null,
+                snowy = snowy, p98 = st.p98,
             ),
             engagedBefore,
         )
+        brainWantsHdr = d.hdr && caps.manualSensor
         val flashReady = flash != FlashSetting.OFF && caps.hasFlash && !useFront
         val shutter = d.shutterNs.takeIf { caps.manualSensor && !flashReady }
         if (shutter != null && engagedBefore == null && live.shutterNs > 0 && live.iso > 0) {
@@ -838,6 +861,11 @@ class CameraEngine(private val context: Context) {
         lastSubjectY = subj?.box?.centerY() ?: -1f
         lastSubjectTime = now
         subject = subj
+        frameAnalyzer?.let { fa ->
+            fa.regionMirrored = useFront
+            fa.region = subj?.box?.let { NormRect(it.left, it.top, it.right, it.bottom) }
+        }
+        snowy = d.labels.any { (label, conf) -> conf >= 0.6f && (label == "Snow" || label == "Skiing" || label == "Glacier") }
         maybeAutoLens(result.scene)
         if (appliedScene != null && appliedScene != result.scene && result.scene != Scene.GENERAL) appliedScene = null
         subj?.let { focusOnSubject(it) }
@@ -1009,6 +1037,7 @@ class CameraEngine(private val context: Context) {
         val kind = when (shotSetting) {
             ShotSetting.SINGLE -> null
             ShotSetting.NIGHT -> BurstKind.NIGHT
+            ShotSetting.HDR -> if (caps.manualSensor) BurstKind.HDR else null
             ShotSetting.MACRO -> if (caps.manualFocus) BurstKind.MACRO else null
             ShotSetting.AUTO -> {
                 if (!multiShotAuto || !brainActive) null
@@ -1019,6 +1048,7 @@ class CameraEngine(private val context: Context) {
                     when {
                         sc == Scene.MACRO && caps.manualFocus && live.focusDiopters > 5f -> BurstKind.MACRO
                         sc == Scene.NIGHT || dark -> BurstKind.NIGHT
+                        brainWantsHdr -> BurstKind.HDR
                         else -> null
                     }
                 }
@@ -1027,13 +1057,18 @@ class CameraEngine(private val context: Context) {
         val n = when (kind) {
             BurstKind.NIGHT -> if (steady) 6 else 8
             BurstKind.MACRO -> 5
+            BurstKind.HDR -> 3
         }
         return kind to n
     }
 
     /** Explicación corta de la toma múltiple para la interfaz. */
     fun burstLabel(): String? = burstPlan()?.let { (k, n) ->
-        if (k == BurstKind.NIGHT) "NOCHE · $n TOMAS" else "MACRO+ · $n ENFOQUES"
+        when (k) {
+            BurstKind.NIGHT -> "NOCHE · $n TOMAS"
+            BurstKind.MACRO -> "MACRO+ · $n ENFOQUES"
+            BurstKind.HDR -> "HDR · $n TOMAS"
+        }
     }
 
     /**
@@ -1049,8 +1084,23 @@ class CameraEngine(private val context: Context) {
         val maxFocus = caps.focusValues.lastOrNull() ?: baseFocus
         val focusSteps = listOf(0.8f, 0.9f, 1f, 1.12f, 1.25f).map { (baseFocus * it).coerceIn(0f, maxFocus) }
 
+        // HDR: la última toma con 4× menos luz (velocidad más rápida; si no se puede, menos ISO).
+        val baseIso = live.iso.takeIf { it > 0 } ?: priorityIso
+        val baseShutter = live.shutterNs.takeIf { it > 0 } ?: 10_000_000L
+        val minShutter = caps.shutterValues.firstOrNull() ?: 100_000L
+        val minIso = caps.isoValues.firstOrNull() ?: 50
+        val hdrRatio = BurstProcessor.hdrRatioFor(stats?.clippedArea ?: 0f)
+        val underShutter = (baseShutter / hdrRatio).toLong()
+        val underExposure = if (underShutter >= minShutter) baseIso to underShutter
+        else {
+            // Velocidad mínima alcanzada: el resto de la reducción, con ISO.
+            val rest = hdrRatio * minShutter / baseShutter.toFloat()
+            (baseIso / rest).toInt().coerceAtLeast(minIso) to minShutter
+        }
+
         fun finish(ok: Boolean) {
             burstFocus = null
+            burstExposure = null
             burstLock = false
             applyControls()
             endCapture()
@@ -1060,6 +1110,7 @@ class CameraEngine(private val context: Context) {
 
         fun process() {
             burstFocus = null
+            burstExposure = null
             burstLock = false
             applyControls()
             burstStatus = "Combinando $n tomas…"
@@ -1068,6 +1119,7 @@ class CameraEngine(private val context: Context) {
                     BurstProcessor(context).process(
                         frames, kind, rotation,
                         shadowLift = if (kind == BurstKind.NIGHT) 0.3f else 0f,
+                        hdrRatio = hdrRatio,
                     ) { done, total -> mainHandler.post { burstStatus = "Combinando $done/$total…" } }
                 }.onFailure { Log.e(TAG, "Fallo al combinar", it) }.getOrNull()
                 val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
@@ -1083,7 +1135,7 @@ class CameraEngine(private val context: Context) {
         }
 
         fun shoot(i: Int) {
-            burstStatus = if (kind == BurstKind.NIGHT) "Tomando ${i + 1}/$n · no te muevas" else "Enfoque ${i + 1}/$n · no te muevas"
+            burstStatus = if (kind == BurstKind.MACRO) "Enfoque ${i + 1}/$n · no te muevas" else "Tomando ${i + 1}/$n · no te muevas"
             val go = {
                 ic.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
                     override fun onCaptureSuccess(image: androidx.camera.core.ImageProxy) {
@@ -1105,6 +1157,10 @@ class CameraEngine(private val context: Context) {
                 burstFocus = focusSteps[i % focusSteps.size]
                 applyControls()
                 mainHandler.postDelayed({ go() }, 280) // tiempo para que el lente se mueva
+            } else if (kind == BurstKind.HDR && i == n - 1) {
+                burstExposure = underExposure
+                applyControls()
+                mainHandler.postDelayed({ go() }, 350) // unos fotogramas para que el sensor cambie
             } else go()
         }
         shoot(0)

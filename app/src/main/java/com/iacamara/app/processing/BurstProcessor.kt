@@ -12,7 +12,12 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** Tipo de toma múltiple. */
-enum class BurstKind { NIGHT, MACRO }
+enum class BurstKind {
+    NIGHT,
+    MACRO,
+    /** Varias tomas normales + una 2 pasos más oscura (siempre la última). */
+    HDR,
+}
 
 /**
  * Convierte una ráfaga de JPEG en una sola foto: decodifica, alinea, combina y guarda
@@ -30,9 +35,10 @@ class BurstProcessor(private val context: Context) {
         kind: BurstKind,
         rotationDegrees: Int,
         shadowLift: Float,
+        hdrRatio: Float = HDR_RATIO,
         onProgress: (Int, Int) -> Unit,
     ): Uri? {
-        val (result, count) = combine(frames, kind, shadowLift, onProgress) ?: return null
+        val (result, count) = combine(frames, kind, shadowLift, hdrRatio, onProgress) ?: return null
         return save(result, frames[0], rotationDegrees, kind, count).also { result.recycle() }
     }
 
@@ -41,6 +47,7 @@ class BurstProcessor(private val context: Context) {
         frames: List<ByteArray>,
         kind: BurstKind,
         shadowLift: Float,
+        hdrRatio: Float = HDR_RATIO,
         onProgress: (Int, Int) -> Unit = { _, _ -> },
     ): Pair<Bitmap, Int>? {
         if (frames.isEmpty()) return null
@@ -53,13 +60,15 @@ class BurstProcessor(private val context: Context) {
         first.recycle()
         val refLuma = Align.luma(buf)
 
-        val mean = if (kind == BurstKind.NIGHT) MeanStacker(w, h) else null
+        val mean = if (kind == BurstKind.NIGHT || kind == BurstKind.HDR) MeanStacker(w, h) else null
         val focus = if (kind == BurstKind.MACRO) FocusStacker(w, h) else null
         mean?.add(buf)
         focus?.add(buf)
         onProgress(1, frames.size)
 
-        for (k in 1 until frames.size) {
+        // En HDR la última toma es la oscura: se procesa aparte.
+        val normalCount = if (kind == BurstKind.HDR && frames.size >= 2) frames.size - 1 else frames.size
+        for (k in 1 until normalCount) {
             val bmp = BitmapFactory.decodeByteArray(frames[k], 0, frames[k].size, opts) ?: continue
             if (bmp.width != w || bmp.height != h) { bmp.recycle(); continue }
             bmp.getPixels(buf, 0, w, 0, 0, w, h)
@@ -70,15 +79,28 @@ class BurstProcessor(private val context: Context) {
             onProgress(k + 1, frames.size)
         }
 
-        val out = mean?.result(shadowLift) ?: focus!!.result()
+        var out = mean?.result(shadowLift) ?: focus!!.result()
+        var used = mean?.count ?: focus!!.count
+        if (kind == BurstKind.HDR && frames.size >= 2) {
+            val last = frames.last()
+            val under = BitmapFactory.decodeByteArray(last, 0, last.size, opts)
+            if (under != null && under.width == w && under.height == h) {
+                under.getPixels(buf, 0, w, 0, 0, w, h)
+                under.recycle()
+                val (dx, dy) = Align.estimateShift(refLuma, Align.lumaWithGain(buf, hdrRatio), w, h)
+                out = HdrMerger(w, h).merge(out, buf, dx, dy, hdrRatio)
+                used++
+            }
+            onProgress(frames.size, frames.size)
+        }
         val result = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
-        return result to (mean?.count ?: focus!!.count)
+        return result to used
     }
 
     private fun save(bmp: Bitmap, firstJpeg: ByteArray, rotationDegrees: Int, kind: BurstKind, count: Int): Uri? {
         val resolver = context.contentResolver
         val name = "IACAM_" + SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(System.currentTimeMillis()) +
-            if (kind == BurstKind.NIGHT) "_NOCHE" else "_MACRO"
+            when (kind) { BurstKind.NIGHT -> "_NOCHE"; BurstKind.MACRO -> "_MACRO"; BurstKind.HDR -> "_HDR" }
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
             put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
@@ -100,7 +122,7 @@ class BurstProcessor(private val context: Context) {
                     else -> ExifInterface.ORIENTATION_NORMAL
                 }
                 dst.setAttribute(ExifInterface.TAG_ORIENTATION, orientation.toString())
-                val what = if (kind == BurstKind.NIGHT) "noche" else "macro apilado"
+                val what = when (kind) { BurstKind.NIGHT -> "noche"; BurstKind.MACRO -> "macro apilado"; BurstKind.HDR -> "HDR" }
                 dst.setAttribute(ExifInterface.TAG_SOFTWARE, "IA Cámara · $what ($count tomas)")
                 dst.saveAttributes()
             }
@@ -115,6 +137,11 @@ class BurstProcessor(private val context: Context) {
     }
 
     companion object {
+        /** La toma oscura del HDR tiene 4× menos luz (2 pasos)… */
+        const val HDR_RATIO = 4f
+
+        /** …u 8× (3 pasos) si una zona grande está muy quemada (contraluz fuerte, ventana). */
+        fun hdrRatioFor(clippedArea: Float): Float = if (clippedArea > 0.10f) 8f else HDR_RATIO
         private val COPY_TAGS = listOf(
             ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL, ExifInterface.TAG_DATETIME,
             ExifInterface.TAG_DATETIME_ORIGINAL, ExifInterface.TAG_DATETIME_DIGITIZED,

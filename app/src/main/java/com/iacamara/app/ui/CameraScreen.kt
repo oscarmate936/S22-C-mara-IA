@@ -40,6 +40,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Cameraswitch
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
+import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -300,8 +301,11 @@ fun CameraScreen(
                         Spacer(Modifier.height(8.dp))
                         val plan = engine.burstPlan().takeIf { engine.shotSetting == ShotSetting.AUTO }
                         val shotReason = plan?.let { (k, n) ->
-                            if (k == BurstKind.NIGHT) Reason("$n tomas", "combino fotos: mucho menos ruido")
-                            else Reason("$n enfoques", "todo el sujeto nítido")
+                            when (k) {
+                                BurstKind.NIGHT -> Reason("$n tomas", "combino fotos: mucho menos ruido")
+                                BurstKind.MACRO -> Reason("$n enfoques", "todo el sujeto nítido")
+                                BurstKind.HDR -> null // el cerebro ya lo explica
+                            }
                         }
                         BrainReasons(listOfNotNull(shotReason) + engine.brainReasons.take(if (shotReason != null) 2 else 3))
                     }
@@ -471,11 +475,12 @@ private fun TopBar(engine: CameraEngine, prefs: Prefs, rotation: Int, onSettings
             ShotSetting.AUTO -> Icons.Rounded.AutoAwesomeMotion
             ShotSetting.SINGLE -> Icons.Rounded.PhotoCamera
             ShotSetting.NIGHT -> Icons.Rounded.NightsStay
+            ShotSetting.HDR -> Icons.Rounded.HdrOn
             ShotSetting.MACRO -> Icons.Rounded.Layers
         }
         BarIconButton(
             shotIcon, "Tipo de toma: " + engine.shotSetting.label,
-            active = engine.shotSetting == ShotSetting.NIGHT || engine.shotSetting == ShotSetting.MACRO,
+            active = engine.shotSetting != ShotSetting.AUTO && engine.shotSetting != ShotSetting.SINGLE,
             rotation = rotation,
             tint = if (engine.shotSetting == ShotSetting.AUTO) Palette.Cyan else if (engine.shotSetting == ShotSetting.SINGLE) Palette.Paper else Palette.Amber,
         ) { engine.cycleShot() }

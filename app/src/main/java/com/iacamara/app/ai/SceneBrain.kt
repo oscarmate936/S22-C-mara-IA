@@ -93,11 +93,11 @@ enum class Scene(
     BEACH(
         "Playa · Agua", "Arena, mar o agua brillante.",
         listOf(
-            "La arena y el agua engañan al fotómetro: bajo −0.3 para no quemarlas.",
+            "La arena brillante engaña al fotómetro y la deja gris: subo +0.3 para que se vea luminosa.",
             "El 0.6× captura toda la amplitud de la costa.",
             "Horizonte recto (usa el nivel) y en un tercio, nunca al centro.",
         ),
-        Recipe(lensFactor = 0.6f, ev = -0.3f, wb = WhiteBalance.DAYLIGHT), CompositionGoal.HORIZON_LOW,
+        Recipe(lensFactor = 0.6f, ev = 0.3f, wb = WhiteBalance.DAYLIGHT), CompositionGoal.HORIZON_LOW,
     ),
     LANDSCAPE(
         "Paisaje", "Montañas, campo, árboles o cielo abierto.",

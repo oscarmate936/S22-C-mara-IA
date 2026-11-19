@@ -3,6 +3,7 @@ package com.iacamara.app.processing
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import java.util.stream.IntStream
 
@@ -34,6 +35,14 @@ object Align {
             }
         }
         return out
+    }
+
+    /** Luminancia de una toma más oscura, llevada al brillo de la normal (para poder alinearlas). */
+    fun lumaWithGain(px: IntArray, gain: Float): ByteArray {
+        val lut = ByteArray(256) { v -> (((v / 255.0).pow(2.2) * gain).coerceAtMost(1.0).pow(1 / 2.2) * 255 + 0.5).toInt().toByte() }
+        val l = luma(px)
+        for (i in l.indices) l[i] = lut[l[i].toInt() and 0xFF]
+        return l
     }
 
     /**
@@ -268,5 +277,179 @@ class FocusStacker(private val w: Int, private val h: Int) {
 
     companion object {
         const val BLOCK = 8
+    }
+}
+
+/**
+ * HDR natural: combina la toma normal (sombras y sujeto) con una toma más oscura (cielo, luces).
+ * Se trabaja en luz lineal (como la física real), con una transición suave y una curva de
+ * compresión que solo actúa en las altas luces: los tonos medios quedan intactos, sin "halos"
+ * ni aspecto de filtro.
+ */
+class HdrMerger(private val w: Int, private val h: Int) {
+    private val toLin = FloatArray(256) { (it / 255f).toDouble().pow(2.2).toFloat() }
+    private val encode = IntArray(4097) { ((it / 4096.0).pow(1 / 2.2) * 255 + 0.5).toInt().coerceIn(0, 255) }
+
+    /** Relación de luz realmente medida entre la toma normal y la oscura (último uso). */
+    var measuredRatio = 0f
+        private set
+
+    fun merge(normal: IntArray, under: IntArray, dx: Int, dy: Int, nominalRatio: Float = 4f): IntArray {
+        val ratio = estimateRatio(normal, under, dx, dy, nominalRatio).also { measuredRatio = it }
+        val mask = highlightMask(normal)
+
+        // Mezcla en luz lineal (puede superar 1.0: luz que el sensor normal no pudo guardar).
+        val lr = FloatArray(w * h)
+        val lg = FloatArray(w * h)
+        val lb = FloatArray(w * h)
+        parallelRows(h) { ya, yb -> for (y in ya until yb) {
+            val sy = y + dy
+            for (x in 0 until w) {
+                val i = y * w + x
+                val p = normal[i]
+                var r = toLin[(p shr 16) and 0xFF]
+                var g = toLin[(p shr 8) and 0xFF]
+                var b = toLin[p and 0xFF]
+                val sx = x + dx
+                val m = mask[i]
+                if (m > 0f && sx in 0 until w && sy in 0 until h) {
+                    val q = under[sy * w + sx]
+                    r = r * (1 - m) + toLin[(q shr 16) and 0xFF] * ratio * m
+                    g = g * (1 - m) + toLin[(q shr 8) and 0xFF] * ratio * m
+                    b = b * (1 - m) + toLin[q and 0xFF] * ratio * m
+                }
+                lr[i] = r; lg[i] = g; lb[i] = b
+            }
+        } }
+
+        // Punto blanco: el 99.9 % de la luminancia (lo demás puede quemarse, p. ej. el sol).
+        val hist = IntArray(4096)
+        for (i in 0 until w * h step 3) {
+            val yv = 0.2126f * lr[i] + 0.7152f * lg[i] + 0.0722f * lb[i]
+            hist[(yv / 16f * 4095).toInt().coerceIn(0, 4095)]++
+        }
+        var acc = 0
+        val total = hist.sum()
+        var white = 16f
+        for (k in 4095 downTo 0) {
+            acc += hist[k]
+            if (acc > total / 1000) { white = (k + 1) / 4095f * 16f; break }
+        }
+        val curve = ToneCurve(white.coerceAtLeast(1f))
+
+        val out = IntArray(w * h)
+        parallelRows(h) { ya, yb -> for (y in ya until yb) {
+            for (x in 0 until w) {
+                val i = y * w + x
+                val yv = 0.2126f * lr[i] + 0.7152f * lg[i] + 0.0722f * lb[i]
+                val k = if (yv > 1e-6f) curve(yv) / yv else 1f
+                fun enc(c: Float) = encode[(c * k * 4096).toInt().coerceIn(0, 4096)]
+                out[i] = (0xFF shl 24) or (enc(lr[i]) shl 16) or (enc(lg[i]) shl 8) or enc(lb[i])
+            }
+        } }
+        return out
+    }
+
+    /** Mide cuánta más luz tiene la toma normal comparando zonas bien expuestas en ambas. */
+    private fun estimateRatio(normal: IntArray, under: IntArray, dx: Int, dy: Int, nominal: Float): Float {
+        val ratios = ArrayList<Float>()
+        var i = 0
+        while (i < w * h && ratios.size < 40000) {
+            val x = i % w
+            val y = i / w
+            val sx = x + dx
+            val sy = y + dy
+            if (sx in 0 until w && sy in 0 until h) {
+                val p = normal[i]
+                val mx = max(max((p shr 16) and 0xFF, (p shr 8) and 0xFF), p and 0xFF)
+                if (mx in 60..200) {
+                    val q = under[sy * w + sx]
+                    val ln = 0.2126f * toLin[(p shr 16) and 0xFF] + 0.7152f * toLin[(p shr 8) and 0xFF] + 0.0722f * toLin[p and 0xFF]
+                    val lu = 0.2126f * toLin[(q shr 16) and 0xFF] + 0.7152f * toLin[(q shr 8) and 0xFF] + 0.0722f * toLin[q and 0xFF]
+                    if (lu > 0.003f) ratios += ln / lu
+                }
+            }
+            i += 7
+        }
+        if (ratios.size < 200) return nominal
+        ratios.sort()
+        return ratios[ratios.size / 2].coerceIn(1.5f, 16f)
+    }
+
+    /** Dónde usar la toma oscura: zonas casi quemadas, con bordes suaves (sin halos). */
+    private fun highlightMask(normal: IntArray): FloatArray {
+        val b = 8
+        val bw = (w + b - 1) / b
+        val bh = (h + b - 1) / b
+        var low = FloatArray(bw * bh)
+        val n = IntArray(bw * bh)
+        for (y in 0 until h) for (x in 0 until w) {
+            val p = normal[y * w + x]
+            val mx = max(max((p shr 16) and 0xFF, (p shr 8) and 0xFF), p and 0xFF)
+            val t = ((mx - 200) / 45f).coerceIn(0f, 1f)
+            val bi = (y / b) * bw + x / b
+            low[bi] += t * t * (3 - 2 * t)
+            n[bi]++
+        }
+        for (k in low.indices) low[k] /= max(n[k], 1)
+        // Dos pasadas de suavizado: transiciones de ~40 px, imperceptibles.
+        repeat(2) {
+            val o = FloatArray(bw * bh)
+            for (by in 0 until bh) for (bx in 0 until bw) {
+                var s = 0f
+                var c = 0
+                for (oy in -1..1) for (ox in -1..1) {
+                    val yy = by + oy
+                    val xx = bx + ox
+                    if (yy in 0 until bh && xx in 0 until bw) { s += low[yy * bw + xx]; c++ }
+                }
+                o[by * bw + bx] = max(s / c, low[by * bw + bx] * 0.85f)
+            }
+            low = o
+        }
+        // Ampliación bilineal a resolución completa.
+        val mask = FloatArray(w * h)
+        parallelRows(h) { ya, yb -> for (y in ya until yb) {
+            val fy = ((y + 0.5f) / b - 0.5f).coerceIn(0f, (bh - 1).toFloat())
+            val y0 = fy.toInt()
+            val y1 = min(y0 + 1, bh - 1)
+            val ty = fy - y0
+            for (x in 0 until w) {
+                val fx = ((x + 0.5f) / b - 0.5f).coerceIn(0f, (bw - 1).toFloat())
+                val x0 = fx.toInt()
+                val x1 = min(x0 + 1, bw - 1)
+                val tx = fx - x0
+                val a = low[y0 * bw + x0] * (1 - tx) + low[y0 * bw + x1] * tx
+                val c = low[y1 * bw + x0] * (1 - tx) + low[y1 * bw + x1] * tx
+                mask[y * w + x] = (a * (1 - ty) + c * ty).coerceIn(0f, 1f)
+            }
+        } }
+        return mask
+    }
+}
+
+/**
+ * Curva de compresión de altas luces: idéntica por debajo de la rodilla (tonos medios intactos)
+ * y suave por encima, llevando el punto blanco [white] a 1.0 sin cortes.
+ */
+class ToneCurve(private val white: Float, private val knee: Float = 0.5f) {
+    private val s: Float = run {
+        if (white <= 1f) return@run 0f
+        val d = white - knee
+        val target = 1f - knee
+        var lo = 1e-4f
+        var hi = 100f
+        repeat(60) {
+            val mid = (lo + hi) / 2
+            val g = mid * (1 - kotlin.math.exp(-d / mid))
+            if (g < target) lo = mid else hi = mid
+        }
+        (lo + hi) / 2
+    }
+    private val norm = if (white <= 1f) 1f else 1 - kotlin.math.exp(-(white - knee) / s)
+
+    operator fun invoke(y: Float): Float {
+        if (white <= 1f || y <= knee) return y.coerceAtMost(1f)
+        return (knee + (1 - knee) * (1 - kotlin.math.exp(-(y - knee) / s)) / norm).coerceAtMost(1f)
     }
 }

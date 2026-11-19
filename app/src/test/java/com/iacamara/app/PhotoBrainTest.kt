@@ -26,11 +26,16 @@ class PhotoBrainTest {
         iso: Int = 200,
         priorityIso: Int = 400,
         speed: Float = 0f,
+        clippedArea: Float = clipped,
+        shadowArea: Float = 0f,
+        snowy: Boolean = false,
+        p98: Float = 0.62f,
     ) = BrainInput(
         scene = scene, subject = null, subjectSpeed = speed, gyro = gyro, steady = steady,
         equivalentMm = mm, meanLuma = luma, clippedHighlights = clipped, liveIso = iso,
         aeShutterNs = aeShutterNs, isoMin = 50, isoMax = 3200, priorityIso = priorityIso,
         shutterValues = shutters,
+        clippedArea = clippedArea, shadowArea = shadowArea, snowy = snowy, p98 = p98,
     )
 
     @Test fun mascotaCongelaMovimiento() {
@@ -64,7 +69,7 @@ class PhotoBrainTest {
         var d = b.decide(input(Scene.GENERAL, clipped = 0.08f), null)
         repeat(5) { d = b.decide(input(Scene.GENERAL, clipped = 0.08f), null) }
         assertTrue(d.ev < -0.5f)
-        assertTrue(d.reasons.any { it.why.contains("altas luces") })
+        assertTrue(d.reasons.any { it.why.contains("cielo") })
     }
 
     @Test fun cambiosDeExposicionSonSuaves() {
@@ -94,5 +99,38 @@ class PhotoBrainTest {
         // Ya en exposición larga, el ISO bajó a 200: debe mantenerla, no soltarla y volver a tomarla.
         val d = PhotoBrain().decide(input(Scene.NIGHT, steady = true, gyro = 0.002f, luma = 0.3f, iso = 200), engaged = 250_000_000L)
         assertEquals(250_000_000L, d.shutterNs)
+    }
+
+    @Test fun unaLamparaNoOscureceLaFoto() {
+        // 4 % de píxeles quemados pero concentrados (lámpara/sol): ocupan solo el 1 % del encuadre.
+        val b = PhotoBrain()
+        var d = b.decide(input(Scene.GENERAL, clipped = 0.04f, clippedArea = 0.01f), null)
+        repeat(5) { d = b.decide(input(Scene.GENERAL, clipped = 0.04f, clippedArea = 0.01f), null) }
+        assertEquals(0f, d.ev, 0.05f)
+    }
+
+    @Test fun laNieveSaleBlanca() {
+        // Lo más claro de la nieve está en 0.62: hay ~1.3 pasos de margen antes de quemar.
+        val b = PhotoBrain()
+        var d = b.decide(input(Scene.LANDSCAPE, snowy = true), null)
+        repeat(3) { d = b.decide(input(Scene.LANDSCAPE, snowy = true), null) }
+        assertTrue("debe subir la exposición (${d.ev})", d.ev > 0.9f)
+        assertTrue(d.reasons.any { it.why.contains("nieve") })
+    }
+
+    @Test fun altoContrastePideHdr() {
+        val d = PhotoBrain().decide(input(Scene.GENERAL, clippedArea = 0.12f, shadowArea = 0.15f), null)
+        assertTrue(d.hdr)
+        assertEquals("HDR", d.reasons.first().value)
+    }
+
+    @Test fun sinHdrSiHayMovimiento() {
+        val d = PhotoBrain().decide(input(Scene.GENERAL, clippedArea = 0.12f, shadowArea = 0.15f, gyro = 0.3f), null)
+        assertTrue(!d.hdr)
+    }
+
+    @Test fun atardecerNoUsaHdrParaConservarSiluetas() {
+        val d = PhotoBrain().decide(input(Scene.SUNSET, clippedArea = 0.12f, shadowArea = 0.3f), null)
+        assertTrue(!d.hdr)
     }
 }

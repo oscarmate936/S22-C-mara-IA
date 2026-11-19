@@ -32,6 +32,8 @@ Cada cambio que se sube al repositorio vuelve a compilar el APK automáticamente
 
 | **Cerebro fotógrafo** (fase 3) | En modo **IA** ajusta todo solo y de forma continua. Elige la velocidad según el movimiento real del sujeto (IA) y de tu mano (giroscopio), aplicando la regla de pulso según la focal. Aplica la exposición de cada escena y protege las altas luces. Si el teléfono está apoyado (trípode), usa exposición larga con ISO bajo. Cambia de lente cuando la escena lo pide, con opción de deshacer. Cada decisión se explica en pantalla y los valores que decide la IA se ven en **cian**. |
 
+| **Medición inteligente** (IA v2) | Mide la luz **sobre la cara o el sujeto** y lo expone bien aunque esté a contraluz. Expone la nieve "a la derecha" para que salga blanca sin quemarse. Deja quemar lámparas y el sol (puntos de luz) y solo protege zonas grandes como el cielo. Con contraste extremo recomienda **HDR**. |
+| **HDR natural** | Combina tomas normales con una 2–3 pasos más oscura, en luz lineal y con transiciones suaves (sin halos). Mide la relación de luz real entre tomas y comprime solo las altas luces. |
 | **Tomas múltiples** (fase 4) | **Noche:** combina 6–8 fotos alineadas; el ruido baja ~√N sin el aspecto "pintado" de los filtros, descarta lo que se mueve entre tomas y aclara suavemente las sombras. **Macro+:** 5 fotos a distintas distancias de enfoque que se combinan quedándose con lo más nítido de cada una. En modo IA se eligen solas según la luz y la escena. También se pueden elegir con el botón de tipo de toma en la barra superior (Auto, 1 toma, Noche, Macro+). |
 | **RAW (DNG)** | Guarda el archivo en bruto del sensor junto al JPG, si el lente lo permite (se activa en Ajustes). |
 
