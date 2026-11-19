@@ -117,14 +117,18 @@ class PhotoBrain {
             }
         }
         // 4) Contraste que el sensor no abarca: cielo quemado Y sombras profundas a la vez.
-        if (i.clippedArea > BIG_CLIP && i.shadowArea > 0.08f && i.scene != Scene.SUNSET && i.scene != Scene.NIGHT) hdr = true
+        if (i.clippedArea > BIG_CLIP && i.shadowArea > 0.08f && i.scene != Scene.NIGHT) hdr = true
+        // Amanecer/atardecer: si el resplandor del horizonte se quema, el HDR recupera su color.
+        // El HDR de la app solo reemplaza las luces quemadas: la silueta sigue oscura.
+        val sunsetGlow = i.scene == Scene.SUNSET && (i.clippedArea > 0.01f || i.p98 > 0.97f)
+        if (sunsetGlow) hdr = true
         if (i.subjectSpeed > 0.15f || i.gyro > 0.15f || i.imageMotion > 0.12f) hdr = false // HDR con movimiento deja fantasmas
 
         targetEv = targetEv.coerceIn(-2f, 2f)
         // Cambios suaves (máx. 1/3 de paso por ciclo) para que la imagen no "bombee".
         smoothEv += (targetEv - smoothEv).coerceIn(-0.34f, 0.34f)
         if (abs(smoothEv) >= 0.15f) reasons += Reason(ExposureMath.formatEv(smoothEv) + " EV", evWhy)
-        if (hdr) reasons.add(0, Reason("HDR", "cielo y sombras con detalle a la vez"))
+        if (hdr) reasons.add(0, Reason("HDR", if (sunsetGlow) "recupero el color del cielo sin aclarar la silueta" else "cielo y sombras con detalle a la vez"))
 
         // ------------------------------------------------ Blancos
         val wb = i.scene.recipe?.wb ?: WhiteBalance.AUTO

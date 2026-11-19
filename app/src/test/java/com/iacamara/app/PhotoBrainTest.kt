@@ -129,8 +129,16 @@ class PhotoBrainTest {
         assertTrue(!d.hdr)
     }
 
-    @Test fun atardecerNoUsaHdrParaConservarSiluetas() {
-        val d = PhotoBrain().decide(input(Scene.SUNSET, clippedArea = 0.12f, shadowArea = 0.3f), null)
+    @Test fun atardecerConResplandorQuemadoUsaHdrSinAclararLaSilueta() {
+        val b = PhotoBrain()
+        var d = b.decide(input(Scene.SUNSET, clippedArea = 0.06f, shadowArea = 0.3f, p98 = 1f), null)
+        repeat(4) { d = b.decide(input(Scene.SUNSET, clippedArea = 0.06f, shadowArea = 0.3f, p98 = 1f), null) }
+        assertTrue(d.hdr)
+        assertTrue("sigue exponiendo para el cielo (silueta oscura)", d.ev <= -0.7f)
+    }
+
+    @Test fun atardecerSinQuemarNoNecesitaHdr() {
+        val d = PhotoBrain().decide(input(Scene.SUNSET, clippedArea = 0f, shadowArea = 0.3f, p98 = 0.85f), null)
         assertTrue(!d.hdr)
     }
 }

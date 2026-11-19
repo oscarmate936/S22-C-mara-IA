@@ -20,4 +20,5 @@ Fotos de prueba (dominio público / CC0, de scikit-image): astronauta (NASA), ga
 | `cmp_macro_gato.png` | Mejor toma sola vs. apilado de 5 enfoques |
 | `cmp_ia_contraluz.png` | Contraluz: cámara sola · IA v2 (cara bien expuesta) · IA v2 + HDR (ventana recuperada) |
 | `cmp_ia_nieve.png` | Nieve: cámara sola (gris) vs. IA v2 (blanca, sin quemar) |
+| `cmp_amanecer.png` | Amanecer: antes (resplandor quemado) vs. ahora con HDR (color recuperado, misma silueta) |
 | `reporte.txt` | Métricas (PSNR, alineación, fotómetro, escenas) |

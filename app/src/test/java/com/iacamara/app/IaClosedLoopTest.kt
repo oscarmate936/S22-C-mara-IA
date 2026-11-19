@@ -277,4 +277,74 @@ class IaClosedLoopTest {
 
         File(outDir, "reporte_ia_v2.txt").writeText(report.toString())
     }
+
+    // ------------------------------------------------ amanecer
+
+    /** Amanecer: cielo con degradado, brillo muy intenso en el horizonte, disco solar y tierra en silueta. */
+    private fun sunriseScene(w: Int = 480, h: Int = 640): Radiance {
+        val r = FloatArray(w * h); val g = FloatArray(w * h); val b = FloatArray(w * h)
+        val horizon = 0.68f
+        for (i in r.indices) {
+            val x = (i % w) / w.toFloat(); val y = (i / w) / h.toFloat()
+            if (y > horizon) {
+                val tex = 0.008f + 0.004f * (((i * 2654435761L) ushr 28) and 7) / 7f
+                r[i] = tex; g[i] = tex; b[i] = tex
+                continue
+            }
+            val t = y / horizon // 0 arriba, 1 en el horizonte
+            // Cielo: violeta arriba → naranja cerca del horizonte
+            var rr = 0.04f + 0.9f * t * t
+            var gg = 0.03f + 0.38f * t * t * t
+            var bb = 0.10f + 0.05f * t
+            // Resplandor alrededor de donde sale el sol (mucho más luz que el resto)
+            val dx = (x - 0.55f) / 0.38f; val dy = (y - horizon) / 0.13f
+            val glow = 28f * exp(-(dx * dx + dy * dy).toDouble()).toFloat()
+            rr *= 1 + glow; gg *= 1 + glow * 1.15f; bb *= 1 + glow * 0.6f
+            // Disco del sol asomando
+            if (((x - 0.55f) * (x - 0.55f) * 0.5625f + (y - horizon) * (y - horizon)) < 0.0004f) { rr = 60f; gg = 50f; bb = 35f }
+            r[i] = rr; g[i] = gg; b[i] = bb
+        }
+        return Radiance(w, h, r, g, b)
+    }
+
+    private fun saturation(b: Bitmap, rr: RectF): Pair<Float, Float> {
+        var sat = 0.0; var white = 0; var n = 0
+        for (y in (rr.top * b.height).toInt() until (rr.bottom * b.height).toInt()) for (x in (rr.left * b.width).toInt() until (rr.right * b.width).toInt()) {
+            val p = b.getPixel(x, y)
+            val r = (p shr 16) and 0xFF; val g = (p shr 8) and 0xFF; val bl = p and 0xFF
+            val mx = maxOf(r, g, bl); val mn = minOf(r, g, bl)
+            sat += if (mx == 0) 0.0 else (mx - mn).toDouble() / mx
+            if (r >= 254 && g >= 254 && bl >= 254) white++
+            n++
+        }
+        return (sat / n).toFloat() to white * 100f / n
+    }
+
+    @Test fun amanecerConservaColoresYSilueta() {
+        line("=== AMANECER: brillo del horizonte y silueta ===")
+        val scene = sunriseScene()
+        val ia = runIa(scene, Scene.SUNSET, null)
+        save(ia.photo, "amanecer_ia_sin_hdr.png")
+        // Igual que el motor: bracket según cuánto se quema, y fusión HDR.
+        val w = scene.w; val h = scene.h
+        val ratio = com.iacamara.app.processing.BurstProcessor.hdrRatioFor(ia.stats.clippedArea)
+        val normal = IntArray(w * h).also { ia.photo.getPixels(it, 0, w, 0, 0, w, h) }
+        val under = IntArray(w * h).also { develop(scene, ia.gain / ratio).getPixels(it, 0, w, 0, 0, w, h) }
+        val (dx, dy) = Align.estimateShift(Align.luma(normal), Align.lumaWithGain(under, ratio), w, h)
+        val hdrBmp = Bitmap.createBitmap(HdrMerger(w, h).merge(normal, under, dx, dy, ratio), w, h, Bitmap.Config.ARGB_8888)
+        save(hdrBmp, "amanecer_ia_con_hdr.png")
+
+        // Zona del resplandor (sin el disco del sol) y zona de tierra.
+        val glow = RectF(0.20f, 0.56f, 0.45f, 0.66f)
+        val ground = RectF(0.05f, 0.75f, 0.95f, 0.95f)
+        val (s0, w0) = saturation(ia.photo, glow)
+        val (s1, w1) = saturation(hdrBmp, glow)
+        line("decisión de la IA: %+.1f EV · HDR recomendado: %s · ${ia.why}".format(ia.ev, ia.hdr))
+        line("resplandor  sin HDR: color %.0f%%, quemado %.0f%%   →   con HDR: color %.0f%%, quemado %.0f%%".format(s0 * 100, w0, s1 * 100, w1))
+        line("silueta     brillo de la tierra: sin HDR %.3f → con HDR %.3f (debe seguir oscura)".format(regionLuma(ia.photo, ground), regionLuma(hdrBmp, ground)))
+        assertTrue("el HDR debe recuperar el color del resplandor", s1 > s0 + 0.15f && w1 <= w0)
+        assertTrue("la silueta no se aclara", abs(regionLuma(hdrBmp, ground) - regionLuma(ia.photo, ground)) < 0.02f)
+        assertTrue("la IA debe pedir HDR en este amanecer", ia.hdr)
+        File(outDir, "reporte_amanecer.txt").writeText(report.toString())
+    }
 }
