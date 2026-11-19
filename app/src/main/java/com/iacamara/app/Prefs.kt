@@ -33,6 +33,10 @@ class Prefs(context: Context) {
         private set
     var torchFlash by mutableStateOf(sp.getBoolean("torchFlash", false))
         private set
+    var multiShot by mutableStateOf(sp.getBoolean("multiShot", true))
+        private set
+    var raw by mutableStateOf(sp.getBoolean("raw", false))
+        private set
     var timerSeconds by mutableStateOf(sp.getInt("timer", 0))
         private set
 
@@ -48,6 +52,8 @@ class Prefs(context: Context) {
     fun updateAutoBrain(v: Boolean) { autoBrain = v; sp.edit().putBoolean("autoBrain", v).apply() }
     fun updateAutoLens(v: Boolean) { autoLens = v; sp.edit().putBoolean("autoLens", v).apply() }
     fun updateTorchFlash(v: Boolean) { torchFlash = v; sp.edit().putBoolean("torchFlash", v).apply() }
+    fun updateMultiShot(v: Boolean) { multiShot = v; sp.edit().putBoolean("multiShot", v).apply() }
+    fun updateRaw(v: Boolean) { raw = v; sp.edit().putBoolean("raw", v).apply() }
     fun cycleTimer() {
         timerSeconds = when (timerSeconds) { 0 -> 3; 3 -> 10; else -> 0 }
         sp.edit().putInt("timer", timerSeconds).apply()

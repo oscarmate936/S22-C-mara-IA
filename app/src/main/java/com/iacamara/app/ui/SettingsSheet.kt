@@ -23,7 +23,9 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Camera
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.Equalizer
+import androidx.compose.material.icons.rounded.RawOn
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.GridGoldenratio
 import androidx.compose.material.icons.rounded.Straighten
@@ -89,6 +91,13 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                 ToggleRow(Icons.Rounded.GridGoldenratio, "Entrenador de composición", "Te muestra a dónde mover el sujeto o el horizonte.", prefs.coach, prefs::updateCoach)
             }
 
+            Section("CALIDAD DE IMAGEN")
+            Card {
+                ToggleRow(Icons.Rounded.AutoAwesomeMotion, "Tomas múltiples automáticas", "Con poca luz combina hasta 8 fotos (menos ruido) y en macro varias distancias de enfoque (todo nítido). Mantén el teléfono firme unos segundos.", prefs.multiShot, prefs::updateMultiShot)
+                Divider()
+                ToggleRow(Icons.Rounded.RawOn, "Guardar RAW (DNG)", "Guarda también el archivo en bruto del sensor para editarlo en Lightroom o Snapseed. Con RAW activo, cada foto es de una sola toma.", prefs.raw, prefs::updateRaw)
+            }
+
             Section("COMPOSICIÓN")
             Card {
                 Text("Guías", style = Type.BodyStrong, color = Palette.Paper)
@@ -131,14 +140,14 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text("IA Cámara ${BuildConfigInfo.VERSION}", style = Type.BodyStrong, color = Palette.Paper)
-                        Text("Fase 3 · Cerebro fotógrafo", style = Type.Body, color = Palette.Mist)
+                        Text("Fase 4 · Calidad de imagen", style = Type.Body, color = Palette.Mist)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
                 Roadmap("1", "Control manual total y lentes", done = true)
                 Roadmap("2", "IA que reconoce la escena y al sujeto", done = true)
                 Roadmap("3", "Cerebro fotógrafo: ajuste automático experto", done = true)
-                Roadmap("4", "RAW, apilado, macro y modo noche", done = false)
+                Roadmap("4", "RAW, apilado, macro y modo noche", done = true)
             }
         }
     }

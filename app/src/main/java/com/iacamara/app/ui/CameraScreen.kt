@@ -39,6 +39,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Cameraswitch
+import androidx.compose.material.icons.rounded.AutoAwesomeMotion
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.NightsStay
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.FlashAuto
 import androidx.compose.material.icons.rounded.FlashOff
 import androidx.compose.material.icons.rounded.FlashOn
@@ -50,6 +54,7 @@ import androidx.compose.material.icons.rounded.Timer3
 import androidx.compose.material.icons.rounded.TimerOff
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -74,6 +79,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -85,6 +91,9 @@ import com.iacamara.app.camera.CameraEngine
 import com.iacamara.app.camera.CaptureMode
 import com.iacamara.app.camera.ExposureMath
 import com.iacamara.app.camera.FlashSetting
+import com.iacamara.app.camera.ShotSetting
+import com.iacamara.app.processing.BurstKind
+import com.iacamara.app.ai.Reason
 import com.iacamara.app.camera.Param
 import com.iacamara.app.camera.WhiteBalance
 import com.iacamara.app.sensors.DeviceSensors
@@ -169,6 +178,10 @@ fun CameraScreen(
         engine.autoLens = prefs.autoLens
     }
     LaunchedEffect(prefs.torchFlash) { engine.torchFlash = prefs.torchFlash }
+    LaunchedEffect(prefs.multiShot, prefs.raw) {
+        engine.multiShotAuto = prefs.multiShot
+        engine.rawRequested = prefs.raw
+    }
     LaunchedEffect(Unit) {
         snapshotFlow { sensors.shake to sensors.steady }.collect { (s, st) -> engine.updateMotion(s, st) }
     }
@@ -285,7 +298,12 @@ fun CameraScreen(
                     )
                     if (engine.brainActive && engine.scene != null) {
                         Spacer(Modifier.height(8.dp))
-                        BrainReasons(engine.brainReasons)
+                        val plan = engine.burstPlan().takeIf { engine.shotSetting == ShotSetting.AUTO }
+                        val shotReason = plan?.let { (k, n) ->
+                            if (k == BurstKind.NIGHT) Reason("$n tomas", "combino fotos: mucho menos ruido")
+                            else Reason("$n enfoques", "todo el sujeto nítido")
+                        }
+                        BrainReasons(listOfNotNull(shotReason) + engine.brainReasons.take(if (shotReason != null) 2 else 3))
                     }
                 }
             }
@@ -299,6 +317,10 @@ fun CameraScreen(
                     }
                 }
                 engine.errorMessage?.let { InfoPill(it.uppercase(), Palette.Signal, modifier = Modifier.padding(top = 6.dp)) }
+                val burstLabel = engine.burstLabel()
+                AnimatedVisibility(burstLabel != null && engine.burstStatus == null && engine.shotSetting != ShotSetting.AUTO, enter = fadeIn(), exit = fadeOut()) {
+                    InfoPill(burstLabel ?: "", Palette.Amber, Icons.Rounded.Layers, Modifier.padding(top = 6.dp))
+                }
             }
 
             // Lentes + panel de parámetro (abajo del visor)
@@ -322,6 +344,18 @@ fun CameraScreen(
                     exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
                 ) {
                     engine.selectedParam?.let { ParamPanel(engine, it, prefs.haptics) }
+                }
+            }
+
+            // Progreso de toma múltiple
+            AnimatedVisibility(engine.burstStatus != null, Modifier.align(Alignment.Center), enter = fadeIn(), exit = fadeOut()) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.glass(RoundedCornerShape(20.dp)).padding(horizontal = 22.dp, vertical = 16.dp),
+                ) {
+                    CircularProgressIndicator(color = Palette.Cyan, strokeWidth = 2.5.dp, modifier = Modifier.size(30.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text(engine.burstStatus ?: "", style = Type.BodyStrong, color = Palette.Paper)
                 }
             }
 
@@ -430,12 +464,24 @@ private fun TopBar(engine: CameraEngine, prefs: Prefs, rotation: Int, onSettings
         ) { engine.cycleFlash() }
         val timerIcon = when (prefs.timerSeconds) { 3 -> Icons.Rounded.Timer3; 10 -> Icons.Rounded.Timer10; else -> Icons.Rounded.TimerOff }
         BarIconButton(timerIcon, "Temporizador", active = prefs.timerSeconds > 0, rotation = rotation) { prefs.cycleTimer() }
+        val shotIcon = when (engine.shotSetting) {
+            ShotSetting.AUTO -> Icons.Rounded.AutoAwesomeMotion
+            ShotSetting.SINGLE -> Icons.Rounded.PhotoCamera
+            ShotSetting.NIGHT -> Icons.Rounded.NightsStay
+            ShotSetting.MACRO -> Icons.Rounded.Layers
+        }
+        BarIconButton(
+            shotIcon, "Tipo de toma: " + engine.shotSetting.label,
+            active = engine.shotSetting == ShotSetting.NIGHT || engine.shotSetting == ShotSetting.MACRO,
+            rotation = rotation,
+            tint = if (engine.shotSetting == ShotSetting.AUTO) Palette.Cyan else if (engine.shotSetting == ShotSetting.SINGLE) Palette.Paper else Palette.Amber,
+        ) { engine.cycleShot() }
         BarTextButton(engine.aspect.label, rotation) {
             engine.changeAspect(if (engine.aspect == AspectSetting.RATIO_4_3) AspectSetting.RATIO_16_9 else AspectSetting.RATIO_4_3)
         }
 
         Spacer(Modifier.weight(1f))
-        Brand(engine.mode)
+        Brand(engine.mode, engine.rawActive)
         Spacer(Modifier.weight(1f))
 
         BarIconButton(
@@ -447,12 +493,19 @@ private fun TopBar(engine: CameraEngine, prefs: Prefs, rotation: Int, onSettings
 }
 
 @Composable
-private fun Brand(mode: CaptureMode) {
+private fun Brand(mode: CaptureMode, raw: Boolean) {
     val dot by animateColorAsState(if (mode == CaptureMode.AUTO) Palette.Cyan else Palette.Amber, label = "brandDot")
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(6.dp).background(dot, CircleShape))
         Spacer(Modifier.width(7.dp))
         Text("IA CÁMARA", style = Type.LabelLarge, color = Palette.Paper)
+        if (raw) {
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "RAW", style = Type.Label.copy(fontSize = 9.sp), color = Palette.Ink,
+                modifier = Modifier.background(Palette.Amber, RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp),
+            )
+        }
     }
 }
 

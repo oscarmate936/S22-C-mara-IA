@@ -21,6 +21,8 @@ import com.iacamara.app.ai.BrainInput
 import com.iacamara.app.ai.PhotoBrain
 import com.iacamara.app.ai.Reason
 import com.iacamara.app.ai.Scene
+import com.iacamara.app.processing.BurstKind
+import com.iacamara.app.processing.BurstProcessor
 import com.iacamara.app.ai.SceneBrain
 import com.iacamara.app.ai.SceneDetector
 import com.iacamara.app.ai.SceneResult
@@ -64,6 +66,9 @@ import kotlin.math.sqrt
 enum class CaptureMode { AUTO, PRO }
 enum class Param { ISO, SHUTTER, WB, FOCUS, EV }
 enum class FlashSetting { OFF, AUTO, ON }
+
+/** Cómo se toma la foto. AUTO = lo decide la IA. */
+enum class ShotSetting(val label: String) { AUTO("Auto"), SINGLE("1 toma"), NIGHT("Noche"), MACRO("Macro+") }
 enum class AspectSetting(val label: String) { RATIO_4_3("4:3"), RATIO_16_9("16:9") }
 
 /**
@@ -147,6 +152,21 @@ class CameraEngine(private val context: Context) {
     /** Usar la luz del flash en modo linterna (compatibilidad). */
     var torchFlash: Boolean = false
 
+    // ---------------- Calidad de imagen (fase 4) ----------------
+    var shotSetting by mutableStateOf(ShotSetting.AUTO)
+        private set
+    /** La IA puede elegir tomas múltiples (noche / macro) sola. */
+    var multiShotAuto: Boolean = true
+    /** Progreso de una toma múltiple ("Tomando 3/8"…), null si no hay. */
+    var burstStatus by mutableStateOf<String?>(null)
+        private set
+    /** La persona pidió RAW (DNG). */
+    var rawRequested: Boolean = false
+        set(v) { if (field != v) { field = v; rebind() } }
+    /** RAW realmente activo en el lente actual. */
+    var rawActive by mutableStateOf(false)
+        private set
+
     // Ajustes manuales (null = automático)
     var manualIso by mutableStateOf<Int?>(null)
         private set
@@ -227,6 +247,9 @@ class CameraEngine(private val context: Context) {
     private var lastFocusY = -1f
 
     private val photoBrain = PhotoBrain()
+    private val processingExecutor = Executors.newSingleThreadExecutor()
+    /** Enfoque temporal durante un apilado de enfoque. */
+    private var burstFocus: Float? = null
     private var lastBrainRun = 0L
     private var gyro = 0f
     private var steady = false
@@ -397,7 +420,11 @@ class CameraEngine(private val context: Context) {
         Camera2Interop.Extender(previewBuilder).setSessionCaptureCallback(captureCallback)
         val preview = previewBuilder.build().also { it.surfaceProvider = view.surfaceProvider }
 
-        val capture = ImageCapture.Builder()
+        val targetInfo = p.availableCameraInfos.firstOrNull { Camera2CameraInfo.from(it).cameraId == lens.cameraId }
+        val rawSupported = rawRequested && targetInfo != null && runCatching {
+            ImageCapture.OUTPUT_FORMAT_RAW_JPEG in ImageCapture.getImageCaptureCapabilities(targetInfo).supportedOutputFormats
+        }.getOrDefault(false)
+        val captureBuilder = ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
             .setResolutionSelector(
                 ResolutionSelector.Builder()
@@ -407,7 +434,8 @@ class CameraEngine(private val context: Context) {
             )
             .setTargetRotation(targetRotation)
             .setJpegQuality(95)
-            .build()
+        if (rawSupported) captureBuilder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_RAW_JPEG)
+        val capture = captureBuilder.build()
         imageCapture = capture
 
         val analysis = ImageAnalysis.Builder()
@@ -435,7 +463,25 @@ class CameraEngine(private val context: Context) {
 
         try {
             p.unbindAll()
-            val cam = p.bindToLifecycle(owner, cameraSelector, preview, capture, analysis)
+            val cam = try {
+                p.bindToLifecycle(owner, cameraSelector, preview, capture, analysis).also { rawActive = rawSupported }
+            } catch (e: Exception) {
+                if (!rawSupported) throw e
+                // Este lente no admite RAW junto a la vista previa: seguimos solo en JPEG.
+                Log.w(TAG, "RAW no disponible con esta combinación", e)
+                p.unbindAll()
+                val jpegOnly = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .setResolutionSelector(
+                        ResolutionSelector.Builder().setAspectRatioStrategy(ratio)
+                            .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY).build(),
+                    )
+                    .setTargetRotation(targetRotation).setJpegQuality(95).build()
+                imageCapture = jpegOnly
+                rawActive = false
+                errorMessage = "RAW no disponible en este lente"
+                p.bindToLifecycle(owner, cameraSelector, preview, jpegOnly, analysis)
+            }
             camera = cam
             boundCameraId = lens.cameraId
             aeAfLocked = false
@@ -579,6 +625,17 @@ class CameraEngine(private val context: Context) {
         val evIndex = (evCompensation / caps.evStep).roundToInt()
 
         if (mode == CaptureMode.AUTO) {
+            val bf = burstFocus
+            if (!brainActive && bf != null) {
+                cam.cameraControl.setExposureCompensationIndex(0)
+                c2.setCaptureRequestOptions(
+                    CaptureRequestOptions.Builder()
+                        .setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
+                        .setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, bf)
+                        .build(),
+                )
+                return
+            }
             if (!brainActive) {
                 c2.clearCaptureRequestOptions()
                 cam.cameraControl.setExposureCompensationIndex(0)
@@ -598,6 +655,10 @@ class CameraEngine(private val context: Context) {
                 cam.cameraControl.setExposureCompensationIndex((brainEv / caps.evStep).roundToInt().coerceIn(lo, hi))
             }
             b.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, brainWb.awbMode)
+            bf?.let {
+                b.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
+                b.setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, it)
+            }
             c2.setCaptureRequestOptions(b.build())
             return
         }
@@ -614,7 +675,7 @@ class CameraEngine(private val context: Context) {
             cam.cameraControl.setExposureCompensationIndex(evIndex)
         }
         b.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, whiteBalance.awbMode)
-        manualFocus?.takeIf { caps.manualFocus }?.let {
+        (burstFocus ?: manualFocus)?.takeIf { caps.manualFocus }?.let {
             b.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
             b.setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, it)
         }
@@ -820,6 +881,42 @@ class CameraEngine(private val context: Context) {
 
     // ---------------- Captura ----------------
 
+    /** Guarda el RAW (DNG) y el JPEG a la vez. */
+    private fun takeRawPicture(ic: ImageCapture, onDone: (Boolean) -> Unit) {
+        val base = "IACAM_" + SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(System.currentTimeMillis())
+        fun opts(mime: String) = ImageCapture.OutputFileOptions.Builder(
+            context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, base)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/IA Camara")
+            },
+        ).build()
+        var pending = 2
+        var success = false
+        ic.takePicture(opts("image/x-adobe-dng"), opts("image/jpeg"), ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
+            override fun onImageSaved(result: ImageCapture.OutputFileResults) {
+                val uri = result.savedUri
+                if (uri != null && context.contentResolver.getType(uri)?.contains("jpeg") == true) {
+                    lastPhotoUri = uri
+                    analysisExecutor.execute {
+                        val thumb = runCatching { context.contentResolver.loadThumbnail(uri, Size(240, 240), null) }.getOrNull()
+                        mainHandler.post { if (thumb != null) lastPhoto = thumb }
+                    }
+                }
+                success = true
+                if (--pending <= 0 || uri == null) { isCapturing = false; captureCount++; onDone(true) }
+            }
+
+            override fun onError(e: ImageCaptureException) {
+                Log.e(TAG, "Error al capturar RAW", e)
+                isCapturing = false
+                if (!success) errorMessage = "No se pudo guardar la foto RAW"
+                onDone(success)
+            }
+        })
+    }
+
     /** ¿Hace falta flash ahora? En AUTO solo con poca luz. */
     private fun wantsFlash(): Boolean = when (flash) {
         FlashSetting.OFF -> false
@@ -841,7 +938,9 @@ class CameraEngine(private val context: Context) {
         isCapturing = true
         val flashNow = wantsFlash()
         ic.flashMode = ImageCapture.FLASH_MODE_OFF
+        val burst = if (flashNow) null else burstPlan()
         when {
+            burst != null -> captureBurst(ic, burst.first, burst.second, onDone)
             !flashNow -> takePicture(ic, onDone)
             useFront -> {
                 screenFlash = true
@@ -864,7 +963,115 @@ class CameraEngine(private val context: Context) {
         }
     }
 
+    fun cycleShot() {
+        shotSetting = ShotSetting.entries[(shotSetting.ordinal + 1) % ShotSetting.entries.size]
+    }
+
+    /** Toma múltiple que corresponde ahora (tipo y número de tomas), o null para una sola. */
+    fun burstPlan(): Pair<BurstKind, Int>? {
+        if (rawActive) return null
+        val kind = when (shotSetting) {
+            ShotSetting.SINGLE -> null
+            ShotSetting.NIGHT -> BurstKind.NIGHT
+            ShotSetting.MACRO -> if (caps.manualFocus) BurstKind.MACRO else null
+            ShotSetting.AUTO -> {
+                if (!multiShotAuto || !brainActive) null
+                else {
+                    val st = stats
+                    val sc = scene?.scene
+                    val dark = live.iso >= 1250 || (st != null && st.meanLuma < 0.22f && live.iso >= 640)
+                    when {
+                        sc == Scene.MACRO && caps.manualFocus && live.focusDiopters > 5f -> BurstKind.MACRO
+                        sc == Scene.NIGHT || dark -> BurstKind.NIGHT
+                        else -> null
+                    }
+                }
+            }
+        } ?: return null
+        val n = when (kind) {
+            BurstKind.NIGHT -> if (steady) 6 else 8
+            BurstKind.MACRO -> 5
+        }
+        return kind to n
+    }
+
+    /** Explicación corta de la toma múltiple para la interfaz. */
+    fun burstLabel(): String? = burstPlan()?.let { (k, n) ->
+        if (k == BurstKind.NIGHT) "NOCHE · $n TOMAS" else "MACRO+ · $n ENFOQUES"
+    }
+
+    /**
+     * Ráfaga: N tomas seguidas (en macro, cada una enfocada un poco más cerca o más lejos),
+     * luego se alinean y combinan en segundo plano.
+     */
+    private fun captureBurst(ic: ImageCapture, kind: BurstKind, n: Int, onDone: (Boolean) -> Unit) {
+        val frames = ArrayList<ByteArray>(n)
+        var rotation = 0
+        val baseFocus = (manualFocus ?: live.focusDiopters).coerceAtLeast(0.5f)
+        val maxFocus = caps.focusValues.lastOrNull() ?: baseFocus
+        val focusSteps = listOf(0.8f, 0.9f, 1f, 1.12f, 1.25f).map { (baseFocus * it).coerceIn(0f, maxFocus) }
+
+        fun finish(ok: Boolean) {
+            burstFocus = null
+            applyControls()
+            isCapturing = false
+            burstStatus = null
+            onDone(ok)
+        }
+
+        fun process() {
+            burstFocus = null
+            applyControls()
+            burstStatus = "Combinando $n tomas…"
+            processingExecutor.execute {
+                val uri = runCatching {
+                    BurstProcessor(context).process(
+                        frames, kind, rotation,
+                        shadowLift = if (kind == BurstKind.NIGHT) 0.3f else 0f,
+                    ) { done, total -> mainHandler.post { burstStatus = "Combinando $done/$total…" } }
+                }.onFailure { Log.e(TAG, "Fallo al combinar", it) }.getOrNull()
+                val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
+                mainHandler.post {
+                    if (uri != null) {
+                        lastPhotoUri = uri
+                        thumb?.let { lastPhoto = it }
+                        captureCount++
+                    } else errorMessage = "No se pudo combinar la foto"
+                    finish(uri != null)
+                }
+            }
+        }
+
+        fun shoot(i: Int) {
+            burstStatus = if (kind == BurstKind.NIGHT) "Tomando ${i + 1}/$n · no te muevas" else "Enfoque ${i + 1}/$n · no te muevas"
+            val go = {
+                ic.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onCaptureSuccess(image: androidx.camera.core.ImageProxy) {
+                        if (i == 0) rotation = image.imageInfo.rotationDegrees
+                        val buffer = image.planes[0].buffer
+                        val bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
+                        image.close()
+                        frames += bytes
+                        if (i + 1 < n) shoot(i + 1) else process()
+                    }
+
+                    override fun onError(e: ImageCaptureException) {
+                        Log.e(TAG, "Error en ráfaga", e)
+                        if (frames.size >= 2) process() else { errorMessage = "No se pudo tomar la ráfaga"; finish(false) }
+                    }
+                })
+            }
+            if (kind == BurstKind.MACRO) {
+                burstFocus = focusSteps[i % focusSteps.size]
+                applyControls()
+                mainHandler.postDelayed({ go() }, 280) // tiempo para que el lente se mueva
+            } else go()
+        }
+        shoot(0)
+    }
+
     private fun takePicture(ic: ImageCapture, onDone: (Boolean) -> Unit) {
+        if (rawActive) { takeRawPicture(ic, onDone); return }
         val name = "IACAM_" + SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(System.currentTimeMillis())
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
