@@ -5,13 +5,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-enum class GridType(val label: String) { OFF("Sin guías"), THIRDS("Tercios"), GOLDEN("Áurea"), CENTER("Centro") }
+enum class GridType(val label: String) { OFF("Sin guías"), THIRDS("Tercios"), GOLDEN("Áurea"), CENTER("Centro"), AUTO("IA") }
 
 /** Preferencias persistentes de la app, observables desde Compose. */
 class Prefs(context: Context) {
     private val sp = context.getSharedPreferences("iacamara", Context.MODE_PRIVATE)
 
-    var grid by mutableStateOf(GridType.entries.getOrElse(sp.getInt("grid", 1)) { GridType.THIRDS })
+    // La guía "IA" (cambia según la escena) es la predeterminada; se aplica una vez a quien venía de versiones anteriores.
+    var grid by mutableStateOf(
+        if (!sp.getBoolean("gridIaV1", false)) GridType.AUTO.also { sp.edit().putBoolean("gridIaV1", true).putInt("grid", it.ordinal).apply() }
+        else GridType.entries.getOrElse(sp.getInt("grid", GridType.AUTO.ordinal)) { GridType.AUTO },
+    )
         private set
     var level by mutableStateOf(sp.getBoolean("level", true))
         private set
@@ -44,7 +48,16 @@ class Prefs(context: Context) {
         private set
 
     fun updateGrid(v: GridType) { grid = v; sp.edit().putInt("grid", v.ordinal).apply() }
-    fun cycleGrid() = updateGrid(GridType.entries[(grid.ordinal + 1) % GridType.entries.size])
+    /** Botón de la barra: IA → sin guías → tercios → áurea → centro → IA. */
+    fun cycleGrid() = updateGrid(
+        when (grid) {
+            GridType.AUTO -> GridType.OFF
+            GridType.OFF -> GridType.THIRDS
+            GridType.THIRDS -> GridType.GOLDEN
+            GridType.GOLDEN -> GridType.CENTER
+            GridType.CENTER -> GridType.AUTO
+        },
+    )
     fun updateLevel(v: Boolean) { level = v; sp.edit().putBoolean("level", v).apply() }
     fun updateHistogram(v: Boolean) { histogram = v; sp.edit().putBoolean("histogram", v).apply() }
     fun updateHighlightWarning(v: Boolean) { highlightWarning = v; sp.edit().putBoolean("highlights", v).apply() }

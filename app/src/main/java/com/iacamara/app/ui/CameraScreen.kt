@@ -102,8 +102,8 @@ import com.iacamara.app.ai.Reason
 import com.iacamara.app.camera.Param
 import com.iacamara.app.camera.WhiteBalance
 import com.iacamara.app.sensors.DeviceSensors
-import com.iacamara.app.ai.CompositionGoal
 import com.iacamara.app.ui.components.CompositionCoach
+import com.iacamara.app.ui.components.CompositionHint
 import com.iacamara.app.ui.components.SceneChip
 import com.iacamara.app.ui.components.BrainReasons
 import com.iacamara.app.ui.components.SubjectBox
@@ -268,13 +268,18 @@ fun CameraScreen(
                         )
                     },
             )
-            GridOverlay(prefs.grid)
+            // Plan de composición de la IA (guía, punto del sujeto, horizonte e indicación).
+            val plan = if (prefs.aiScene) com.iacamara.app.ai.Composer.plan(
+                engine.scene?.scene ?: com.iacamara.app.ai.Scene.GENERAL,
+                engine.subject, engine.stats?.horizon, engine.subjectHeading,
+            ) else null
+            GridOverlay(prefs.grid, aiGuide = plan?.guide)
             if (prefs.level) LevelIndicator(sensors.tilt, sensors.isFlat, prefs.haptics)
             ProFrame(pro)
             reticle?.let { FocusReticle(it, engine.aeAfLocked, reticleKey) }
             if (prefs.aiScene) {
                 if (prefs.coach && countdown == 0) {
-                    CompositionCoach(engine.subject, engine.scene?.scene?.goal ?: CompositionGoal.NONE, prefs.haptics)
+                    plan?.let { CompositionCoach(it, prefs.haptics) }
                 }
                 SubjectBox(engine.subject)
             }
@@ -350,6 +355,10 @@ fun CameraScreen(
                         "IA · " + (engine.lensNotice ?: "") + " · DESHACER", Palette.Cyan, Icons.Rounded.AutoAwesome,
                         Modifier.padding(bottom = 10.dp),
                     ) { engine.undoAutoLens() }
+                }
+                if (prefs.aiScene && prefs.coach && countdown == 0 && engine.burstStatus == null) {
+                    CompositionHint(plan)
+                    Spacer(Modifier.height(10.dp))
                 }
                 LensSelector(engine.lenses, engine.activeLens, engine.zoomRatio, rotation) { engine.selectLens(it) }
                 Spacer(Modifier.height(10.dp))
@@ -508,7 +517,8 @@ private fun TopBar(engine: CameraEngine, prefs: Prefs, rotation: Int, onSettings
 
         BarIconButton(
             if (prefs.grid == GridType.OFF) Icons.Rounded.GridOff else Icons.Rounded.GridOn,
-            "Guías", active = prefs.grid != GridType.OFF, rotation = rotation,
+            "Guías: " + prefs.grid.label, active = prefs.grid != GridType.OFF, rotation = rotation,
+            tint = when (prefs.grid) { GridType.OFF -> Palette.Paper; GridType.AUTO -> Palette.Cyan; else -> Palette.Amber },
         ) { prefs.cycleGrid() }
         BarIconButton(Icons.Rounded.Tune, "Ajustes", rotation = rotation, onClick = onSettings)
     }

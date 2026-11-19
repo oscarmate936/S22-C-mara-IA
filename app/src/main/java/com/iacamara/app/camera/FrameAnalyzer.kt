@@ -35,6 +35,8 @@ class FrameStats(
     val globalMotion: Float = 0f,
     /** Movimiento del sujeto en el encuadre (anchos por segundo), medido píxel a píxel. */
     val subjectMotion: Float? = null,
+    /** Horizonte real de la imagen (si se ve uno claro). */
+    val horizon: Horizon? = null,
 )
 
 /** Rectángulo normalizado 0..1 en el marco del visor (vertical, como se ve en pantalla). */
@@ -66,6 +68,10 @@ class FrameAnalyzer(
     private var prevW = 0
     private var prevH = 0
     private var prevTime = 0L
+    /** Última imagen reducida (también sirve para buscar el horizonte). */
+    private var lastSmall: ByteArray? = null
+    private var lastSmallW = 0
+    private var lastSmallH = 0
 
     /** Zona del sujeto a medir (la fija el motor con lo que detecta la IA). */
     @Volatile var region: NormRect? = null
@@ -127,6 +133,10 @@ class FrameAnalyzer(
         }
         val subjectLuma = region?.let { measureRegion(image, it) }
         val (globalMotion, subjectMotion) = measureMotion(image)
+        val horizon = lastSmall?.let { sm ->
+            val (pl, pw, ph) = HorizonDetector.toPortrait(sm, lastSmallW, lastSmallH, rotationOf(image))
+            HorizonDetector.detect(pl, pw, ph)?.takeIf { it.confidence >= 0.45f }
+        }
 
         // Umbral del 25 % más luminoso, a partir del histograma.
         var acc = 0
@@ -187,6 +197,7 @@ class FrameAnalyzer(
             p98 = p98 / 255f,
             globalMotion = globalMotion,
             subjectMotion = subjectMotion,
+            horizon = horizon,
         )
     }
 
@@ -250,7 +261,7 @@ class FrameAnalyzer(
         val h = image.height
         val sw = w / DS
         val sh = h / DS
-        if (sw < 32 || sh < 32) return 0f to null
+        if (sw < 32 || sh < 32) { lastSmall = null; return 0f to null }
         val small = ByteArray(sw * sh)
         for (y in 0 until sh) for (x in 0 until sw) {
             var s = 0
@@ -263,6 +274,7 @@ class FrameAnalyzer(
         val prev = prevSmall
         val dtS = (t - prevTime) / 1e9f
         prevSmall = small; prevW = sw; prevH = sh; prevTime = t
+        lastSmall = small; lastSmallW = sw; lastSmallH = sh
         if (prev == null || prev.size != small.size || dtS !in 0.02f..1.0f) return 0f to null
 
         val short = minOf(sw, sh).toFloat()

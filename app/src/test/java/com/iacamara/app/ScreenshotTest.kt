@@ -37,16 +37,17 @@ class ScreenshotTest {
         rule.waitForIdle(); save("1_bienvenida")
     }
 
-    private fun camera(pro: Boolean, name: String) {
+    private fun camera(pro: Boolean, name: String, landscape: Boolean = false) {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
         val engine = CameraEngine(ctx)
         rule.activity.actionBar?.hide(); rule.setContent { IACamaraTheme { CameraScreen(engine, Prefs(ctx), DeviceSensors(ctx)) {} } }
         rule.waitForIdle()
-        rule.runOnIdle { engine.loadDemoState(pro) }
+        rule.runOnIdle { engine.loadDemoState(pro, landscape) }
         rule.mainClock.advanceTimeBy(1500)
         rule.waitForIdle(); save(name)
     }
 
     @Test fun cameraAuto() = camera(false, "2_auto")
     @Test fun cameraPro() = camera(true, "3_pro")
+    @Test fun cameraHorizon() = camera(false, "4_horizonte", landscape = true)
 }

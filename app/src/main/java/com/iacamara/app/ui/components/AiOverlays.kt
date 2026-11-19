@@ -43,13 +43,12 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.iacamara.app.ai.CompositionGoal
+import com.iacamara.app.ai.CompositionPlan
 import com.iacamara.app.ai.SceneResult
 import com.iacamara.app.ai.shortTitle
 import com.iacamara.app.ai.Subject
 import com.iacamara.app.ui.theme.Palette
 import com.iacamara.app.ui.theme.Type
-import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /** Recuadro cian con esquinas alrededor del sujeto que sigue la IA. */
@@ -93,71 +92,91 @@ fun SubjectBox(subject: Subject?) {
 }
 
 /**
- * Entrenador de composición: muestra a dónde mover el sujeto (punto fuerte de los tercios)
- * o dónde poner el horizonte, y celebra con verde y vibración cuando lo logras.
+ * Entrenador de composición con IA: dibuja el plan del compositor.
+ *  • Sujeto: línea desde los ojos/centro del sujeto hasta el punto donde debe ir.
+ *  • Horizonte: la línea real detectada en la imagen (con su inclinación) y la guía donde debe quedar.
+ * Se pone verde y vibra cuando queda bien compuesto.
  */
 @Composable
-fun CompositionCoach(subject: Subject?, goal: CompositionGoal, haptics: Boolean) {
+fun CompositionCoach(plan: CompositionPlan, haptics: Boolean) {
     val haptic = LocalHapticFeedback.current
-    when {
-        goal == CompositionGoal.HORIZON_LOW || goal == CompositionGoal.HORIZON_HIGH -> {
-            val y = if (goal == CompositionGoal.HORIZON_LOW) 2f / 3f else 1f / 3f
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                val hPx = with(LocalDensity.current) { maxHeight.toPx() }
-                Canvas(Modifier.fillMaxSize()) {
-                    val py = size.height * y
-                    drawLine(Palette.Cyan.copy(alpha = 0.25f), Offset(0f, py), Offset(size.width, py), 6.dp.toPx())
-                    drawLine(Palette.Cyan, Offset(0f, py), Offset(size.width, py), 1.4.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f)))
+    val hasGuide = plan.target != null || plan.horizonTargetY != null
+    LaunchedEffect(plan.aligned && hasGuide) { if (plan.aligned && hasGuide && haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+    val color by animateColorAsState(if (plan.aligned) Palette.Level else Palette.Cyan, label = "coach")
+
+    plan.horizonTargetY?.let { ty ->
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val hPx = with(LocalDensity.current) { maxHeight.toPx() }
+            Canvas(Modifier.fillMaxSize()) {
+                val py = size.height * ty
+                // Guía: dónde debe quedar el horizonte
+                drawLine(color.copy(alpha = 0.22f), Offset(0f, py), Offset(size.width, py), 6.dp.toPx())
+                drawLine(color, Offset(0f, py), Offset(size.width, py), 1.4.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f)))
+                // Horizonte real detectado (con su inclinación)
+                plan.horizon?.let { hz ->
+                    val slope = kotlin.math.tan(Math.toRadians(hz.tiltDeg.toDouble())).toFloat()
+                    val cy = size.height * hz.y
+                    val half = size.width / 2
+                    val a = Offset(0f, cy - slope * half)
+                    val b = Offset(size.width, cy + slope * half)
+                    drawLine(Palette.Paper.copy(alpha = 0.35f), a + Offset(0f, 1.5f), b + Offset(0f, 1.5f), 2.5.dp.toPx())
+                    drawLine(if (plan.aligned) Palette.Level else Palette.Amber, a, b, 2.dp.toPx(), cap = StrokeCap.Round)
                 }
-                Text(
-                    "HORIZONTE AQUÍ",
-                    style = Type.Label.copy(fontSize = 9.sp),
-                    color = Palette.Cyan,
-                    modifier = Modifier.offset { IntOffset(12.dp.roundToPx(), (hPx * y - 18.dp.toPx()).roundToInt()) },
-                )
+            }
+            Text(
+                if (plan.aligned && plan.horizon != null) "HORIZONTE PERFECTO" else "HORIZONTE AQUÍ",
+                style = Type.Label.copy(fontSize = 9.sp),
+                color = color,
+                modifier = Modifier.offset { IntOffset(12.dp.roundToPx(), (hPx * ty - 18.dp.toPx()).roundToInt()) },
+            )
+        }
+    }
+
+    val target = plan.target
+    val anchor = plan.anchor
+    if (target != null && anchor != null) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val density = LocalDensity.current
+            val wPx = with(density) { maxWidth.toPx() }
+            val hPx = with(density) { maxHeight.toPx() }
+            Canvas(Modifier.fillMaxSize()) {
+                val t = Offset(target.x * size.width, target.y * size.height)
+                val an = Offset(anchor.x * size.width, anchor.y * size.height)
+                val rad = 15.dp.toPx()
+                if (!plan.aligned) {
+                    drawLine(Palette.Cyan.copy(alpha = 0.8f), an, t, 1.5.dp.toPx(),
+                        cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 9f)))
+                    drawCircle(Palette.Cyan, 3.dp.toPx(), an)
+                }
+                drawCircle(color.copy(alpha = if (plan.aligned) 0.25f else 0.12f), rad, t)
+                drawCircle(color, rad, t, style = Stroke(1.8.dp.toPx(),
+                    pathEffect = if (plan.aligned) null else PathEffect.dashPathEffect(floatArrayOf(8f, 6f))))
+            }
+            AnimatedVisibility(
+                plan.aligned, enter = fadeIn(), exit = fadeOut(),
+                modifier = Modifier.offset {
+                    IntOffset((target.x * wPx - 52.dp.toPx()).roundToInt(), (target.y * hPx + 22.dp.toPx()).roundToInt())
+                },
+            ) {
+                InfoPill("BIEN COMPUESTO", Palette.Level, Icons.Rounded.Check)
             }
         }
-        goal == CompositionGoal.SUBJECT_THIRDS && subject != null -> {
-            val ax = subject.anchorX
-            val ay = subject.anchorY
-            // Punto fuerte más cercano
-            val tx = if (ax < 0.5f) 1f / 3f else 2f / 3f
-            val ty = if (ay < 0.5f) 1f / 3f else 2f / 3f
-            val dist = hypot(ax - tx, (ay - ty) * 4f / 3f)
-            val aligned = dist < 0.06f
-            val big = subject.box.width() > 0.6f // muy cerca: no tiene sentido moverlo
-            if (big) return
-            LaunchedEffect(aligned) { if (aligned && haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
-            val ring by animateColorAsState(if (aligned) Palette.Level else Palette.Cyan, label = "ring")
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                val density = LocalDensity.current
-                val wPx = with(density) { maxWidth.toPx() }
-                val hPx = with(density) { maxHeight.toPx() }
-                Canvas(Modifier.fillMaxSize()) {
-                    val target = Offset(tx * size.width, ty * size.height)
-                    val anchor = Offset(ax * size.width, ay * size.height)
-                    val rad = 15.dp.toPx()
-                    if (!aligned) {
-                        drawLine(
-                            Palette.Cyan.copy(alpha = 0.8f), anchor, target, 1.5.dp.toPx(),
-                            cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 9f)),
-                        )
-                        drawCircle(Palette.Cyan, 3.dp.toPx(), anchor)
-                    }
-                    drawCircle(ring.copy(alpha = if (aligned) 0.25f else 0.12f), rad, target)
-                    drawCircle(ring, rad, target, style = Stroke(1.8.dp.toPx(),
-                        pathEffect = if (aligned) null else PathEffect.dashPathEffect(floatArrayOf(8f, 6f))))
-                }
-                AnimatedVisibility(
-                    aligned, enter = fadeIn(), exit = fadeOut(),
-                    modifier = Modifier.offset {
-                        IntOffset((tx * wPx - 52.dp.toPx()).roundToInt(), (ty * hPx + 22.dp.toPx()).roundToInt())
-                    },
-                ) {
-                    InfoPill("BIEN COMPUESTO", Palette.Level, Icons.Rounded.Check)
-                }
-            }
+    }
+}
+
+/** Indicación corta de composición ("Mueve el teléfono a la derecha →") con el porqué. */
+@Composable
+fun CompositionHint(plan: CompositionPlan?) {
+    val ins = plan?.instruction
+    AnimatedVisibility(ins != null, enter = fadeIn(), exit = fadeOut()) {
+        val i = ins ?: return@AnimatedVisibility
+        androidx.compose.foundation.layout.Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.glass(RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 8.dp),
+        ) {
+            Text(i.text, style = Type.BodyStrong.copy(fontSize = 14.sp), color = Palette.Cyan)
+            i.why?.let { Text(it, style = Type.Body.copy(fontSize = 11.sp, lineHeight = 14.sp), color = Palette.Mist) }
         }
     }
 }

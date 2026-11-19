@@ -23,6 +23,8 @@ class FaceInfo(
     val rightEye: PointF? = null,
     val mouth: PointF? = null,
     val trackId: Int? = null,
+    /** Hacia dónde mira la persona (vector en el marco vertical; null = de frente). */
+    val look: PointF? = null,
 )
 
 /** Lo que la IA vio en un fotograma. Las cajas están normalizadas 0..1 en el marco del visor. */
@@ -100,6 +102,11 @@ class SceneDetector(private val executor: Executor) {
                     rightEye = point(f.getLandmark(FaceLandmark.RIGHT_EYE)?.position),
                     mouth = point(f.getLandmark(FaceLandmark.MOUTH_BOTTOM)?.position),
                     trackId = f.trackingId,
+                    // Giro de la cabeza: positivo = mira hacia la derecha de la imagen analizada.
+                    look = f.headEulerAngleY.let { yaw ->
+                        if (kotlin.math.abs(yaw) < 12f) null
+                        else Orient.vectorToPortrait((yaw / 40f).coerceIn(-1f, 1f), 0f, delta, mirror)
+                    },
                 )
             }
             val obj = if (tObjects.isSuccessful) tObjects.result.firstOrNull() else null

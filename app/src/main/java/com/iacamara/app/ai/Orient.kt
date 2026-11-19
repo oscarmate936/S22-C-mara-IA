@@ -32,6 +32,17 @@ object Orient {
         )
     }
 
+    /** Convierte una dirección (vector) del marco girado al vertical. */
+    fun vectorToPortrait(dx: Float, dy: Float, delta: Int, mirror: Boolean): PointF {
+        val (x, y) = when (((delta % 360) + 360) % 360) {
+            90 -> dy to -dx
+            180 -> -dx to -dy
+            270 -> -dy to dx
+            else -> dx to dy
+        }
+        return PointF(if (mirror) -x else x, y)
+    }
+
     fun pointToPortrait(u: Float, v: Float, delta: Int, mirror: Boolean): PointF {
         val (x, y) = toPortrait(u, v, delta)
         return PointF(if (mirror) 1f - x else x, y)

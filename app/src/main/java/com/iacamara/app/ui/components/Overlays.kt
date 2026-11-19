@@ -43,8 +43,15 @@ import kotlin.math.roundToInt
 
 /** Guías de composición. Líneas finas con sombra para que se lean sobre cielo claro o sombra. */
 @Composable
-fun GridOverlay(type: GridType, modifier: Modifier = Modifier) {
+fun GridOverlay(type: GridType, modifier: Modifier = Modifier, aiGuide: com.iacamara.app.ai.GuideType? = null) {
     if (type == GridType.OFF) return
+    // Modo IA: la cuadrícula sigue la guía que eligió el compositor para la escena.
+    @Suppress("NAME_SHADOWING")
+    val type = if (type == GridType.AUTO) when (aiGuide) {
+        com.iacamara.app.ai.GuideType.GOLDEN -> GridType.GOLDEN
+        com.iacamara.app.ai.GuideType.CENTER -> GridType.CENTER
+        else -> GridType.THIRDS
+    } else type
     Canvas(modifier.fillMaxSize()) {
         val stops = when (type) {
             GridType.THIRDS -> listOf(1f / 3f, 2f / 3f)

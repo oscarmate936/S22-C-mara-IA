@@ -153,6 +153,8 @@ data class Subject(
     val meterBox: RectF = box,
     /** Identificador de seguimiento: el mismo mientras sea el mismo sujeto. */
     val trackId: Int? = null,
+    /** Hacia dónde mira (rostro): vector en el marco vertical, o null si mira de frente. */
+    val look: PointF? = null,
 ) {
     /** Punto que debe ir sobre el punto fuerte (los ojos en un rostro). */
     val anchorX: Float get() = eyes?.x ?: box.centerX()
@@ -167,7 +169,7 @@ data class Subject(
             if (le == null || re == null) {
                 // Sin puntos: centro de la cara (evita pelo arriba y fondo a los lados).
                 val meter = RectF(b.left + b.width() * 0.25f, b.top + b.height() * 0.40f, b.right - b.width() * 0.25f, b.top + b.height() * 0.80f)
-                return Subject(b, "Persona", true, null, meter, f.trackId)
+                return Subject(b, "Persona", true, null, meter, f.trackId, f.look)
             }
             val eyes = PointF((le.x + re.x) / 2, (le.y + re.y) / 2)
             val eyeDist = kotlin.math.hypot(le.x - re.x, le.y - re.y).coerceAtLeast(0.01f)
@@ -177,7 +179,7 @@ data class Subject(
                 minOf(le.x, re.x), eyes.y + eyeDist * 0.25f,
                 maxOf(le.x, re.x), maxOf(mouthY - eyeDist * 0.1f, eyes.y + eyeDist * 0.5f),
             )
-            return Subject(b, "Persona", true, eyes, meter, f.trackId)
+            return Subject(b, "Persona", true, eyes, meter, f.trackId, f.look)
         }
     }
 }

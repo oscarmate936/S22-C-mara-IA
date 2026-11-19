@@ -187,6 +187,9 @@ class CameraEngine(private val context: Context) {
     /** Sujeto principal en el visor (rostro u objeto), coordenadas 0..1. */
     var subject by mutableStateOf<Subject?>(null)
         private set
+    /** Hacia dónde se mueve el sujeto (anchos/s en el marco vertical), para dejarle espacio delante. */
+    var subjectHeading by mutableStateOf(android.graphics.PointF(0f, 0f))
+        private set
     /** Escena cuya receta profesional está aplicada ahora. */
     var appliedScene by mutableStateOf<Scene?>(null)
         private set
@@ -880,6 +883,18 @@ class CameraEngine(private val context: Context) {
                 subjectSpeed += (v - subjectSpeed) * 0.4f
             }
         } else if (subj == null) subjectSpeed *= 0.5f
+        // Dirección del movimiento (suavizada), aunque la velocidad la mida el flujo óptico.
+        if (subj != null && lastSubjectTime > 0 && lastSubjectX >= 0f) {
+            val dt = (now - lastSubjectTime) / 1000f
+            if (dt in 0.05f..1.5f) {
+                val vx = (subj.box.centerX() - lastSubjectX) / dt
+                val vy = (subj.box.centerY() - lastSubjectY) / dt
+                subjectHeading = android.graphics.PointF(
+                    subjectHeading.x + (vx - subjectHeading.x) * 0.3f,
+                    subjectHeading.y + (vy - subjectHeading.y) * 0.3f,
+                )
+            }
+        } else if (subj == null) subjectHeading = android.graphics.PointF(0f, 0f)
         lastSubjectX = subj?.box?.centerX() ?: -1f
         lastSubjectY = subj?.box?.centerY() ?: -1f
         lastSubjectTime = now
@@ -1234,7 +1249,7 @@ class CameraEngine(private val context: Context) {
 
     /** Estado de ejemplo para capturas de pantalla de la interfaz (sin cámara real). */
     @androidx.annotation.VisibleForTesting
-    fun loadDemoState(pro: Boolean) {
+    fun loadDemoState(pro: Boolean, landscape: Boolean = false) {
         lenses = listOf(
             Lens("2", 1f, 0.55f, 13), Lens("0", 1f, 1f, 24), Lens("0", 2f, 1f, 48, digital = true),
             Lens("3", 1f, 2.9f, 69), Lens("3", 3.45f, 2.9f, 238, digital = true),
@@ -1259,6 +1274,13 @@ class CameraEngine(private val context: Context) {
             Reason("+0.3 EV", "piel más luminosa"),
         )
         lensNotice = "LENTE 2× · RETRATO"
+        if (landscape) {
+            scene = SceneResult(Scene.SUNSET, 0.9f, listOf("cielo cálido"))
+            subject = null
+            lensNotice = null
+            stats = FrameStats(hist, 0.45f, 0.01f, 0.0f, horizon = Horizon(0.52f, 2.4f, 0.9f))
+            brainReasons = listOf(Reason("HDR", "recupero el color del cielo sin aclarar la silueta"), Reason("-0.7 EV", "conserva los colores del cielo"))
+        }
         if (pro) {
             mode = CaptureMode.PRO
             manualShutterNs = 4_000_000L
