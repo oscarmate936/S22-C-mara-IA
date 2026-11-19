@@ -24,6 +24,7 @@ import com.iacamara.app.ai.Scene
 import com.iacamara.app.processing.BurstKind
 import com.iacamara.app.processing.BurstProcessor
 import com.iacamara.app.processing.MomentProcessor
+import com.iacamara.app.processing.PortraitProcessor
 import com.iacamara.app.ai.SceneBrain
 import com.iacamara.app.ai.SceneDetector
 import com.iacamara.app.ai.SceneResult
@@ -70,7 +71,7 @@ enum class Param { ISO, SHUTTER, WB, FOCUS, EV }
 enum class FlashSetting { OFF, AUTO, ON }
 
 /** Cómo se toma la foto. AUTO = lo decide la IA. */
-enum class ShotSetting(val label: String) { AUTO("Auto"), SINGLE("1 toma"), ACTION("Acción"), NIGHT("Noche"), HDR("HDR"), MACRO("Macro+") }
+enum class ShotSetting(val label: String) { AUTO("Auto"), SINGLE("1 toma"), ACTION("Acción"), PORTRAIT("Retrato"), NIGHT("Noche"), HDR("HDR"), MACRO("Macro+") }
 enum class AspectSetting(val label: String) { RATIO_4_3("4:3"), RATIO_16_9("16:9") }
 
 /**
@@ -139,6 +140,15 @@ class CameraEngine(private val context: Context) {
         private set
     var lastPhoto by mutableStateOf<Bitmap?>(null)
         private set
+
+    /** Vuelve a leer la miniatura de la última foto (p. ej. tras cambiar el desenfoque de un retrato). */
+    fun refreshThumbnail(uri: Uri) {
+        if (uri != lastPhotoUri) return
+        analysisExecutor.execute {
+            val t = runCatching { context.contentResolver.loadThumbnail(uri, Size(240, 240), null) }.getOrNull()
+            mainHandler.post { if (t != null && uri == lastPhotoUri) lastPhoto = t }
+        }
+    }
     var lastPhotoUri by mutableStateOf<Uri?>(null)
         private set
     var isCapturing by mutableStateOf(false)
@@ -159,6 +169,8 @@ class CameraEngine(private val context: Context) {
         private set
     /** La IA puede elegir tomas múltiples (noche / macro) sola. */
     var multiShotAuto: Boolean = true
+    /** En modo IA, los retratos (una persona cerca) salen con el fondo desenfocado. */
+    var autoPortrait: Boolean = true
     /** Progreso de una toma múltiple ("Tomando 3/8"…), null si no hay. */
     var burstStatus by mutableStateOf<String?>(null)
         private set
@@ -1122,6 +1134,7 @@ class CameraEngine(private val context: Context) {
         val kind = when (shotSetting) {
             ShotSetting.SINGLE -> null
             ShotSetting.ACTION -> BurstKind.MOMENT
+            ShotSetting.PORTRAIT -> BurstKind.PORTRAIT
             ShotSetting.NIGHT -> BurstKind.NIGHT
             ShotSetting.HDR -> if (caps.manualSensor) BurstKind.HDR else null
             ShotSetting.MACRO -> if (caps.manualFocus) BurstKind.MACRO else null
@@ -1135,6 +1148,9 @@ class CameraEngine(private val context: Context) {
                         sc == Scene.MACRO && caps.manualFocus && live.focusDiopters > 5f -> BurstKind.MACRO
                         sc == Scene.NIGHT || dark -> BurstKind.NIGHT
                         brainWantsHdr -> BurstKind.HDR
+                        // Una persona cerca (rostro de tamaño de retrato): fondo desenfocado.
+                        autoPortrait && sc == Scene.PORTRAIT && faceCount == 1 && subject?.isFace == true &&
+                            (subject?.box?.width() ?: 0f) >= PORTRAIT_FACE_WIDTH -> BurstKind.PORTRAIT
                         // Mascotas, animales o algo moviéndose, y fotos de grupo (parpadeos): el mejor momento.
                         sc == Scene.PET || sc == Scene.ANIMAL || subjectSpeed > 0.15f || faceCount >= 2 -> BurstKind.MOMENT
                         else -> null
@@ -1147,6 +1163,7 @@ class CameraEngine(private val context: Context) {
             BurstKind.MACRO -> 5
             BurstKind.HDR -> 3
             BurstKind.MOMENT -> 4
+            BurstKind.PORTRAIT -> 1
         }
         return kind to n
     }
@@ -1158,6 +1175,7 @@ class CameraEngine(private val context: Context) {
             BurstKind.MACRO -> "MACRO+ · $n ENFOQUES"
             BurstKind.HDR -> "HDR · $n TOMAS"
             BurstKind.MOMENT -> if (frameRingEnabled) "ACCIÓN · MEJOR MOMENTO" else "MEJOR MOMENTO · $n TOMAS"
+            BurstKind.PORTRAIT -> "RETRATO · FONDO DESENFOCADO"
         }
     }
 
@@ -1205,7 +1223,30 @@ class CameraEngine(private val context: Context) {
             burstExposure = null
             burstLock = false
             applyControls()
-            burstStatus = if (kind == BurstKind.MOMENT) "Eligiendo el mejor momento…" else "Combinando $n tomas…"
+            burstStatus = when (kind) {
+                BurstKind.MOMENT -> "Eligiendo el mejor momento…"
+                BurstKind.PORTRAIT -> "Recortando al sujeto…"
+                else -> "Combinando $n tomas…"
+            }
+            if (kind == BurstKind.PORTRAIT) {
+                processingExecutor.execute {
+                    val res = runCatching {
+                        PortraitProcessor(context).process(frames.first(), rotation) { msg -> mainHandler.post { burstStatus = msg } }
+                    }.onFailure { Log.e(TAG, "Fallo en el retrato", it) }.getOrNull()
+                    val uri = res?.uri
+                    val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
+                    mainHandler.post {
+                        if (uri != null) {
+                            lastPhotoUri = uri
+                            thumb?.let { lastPhoto = it }
+                            captureCount++
+                            momentNotice = if (res.subjectFound) "RETRATO · AJUSTA EL DESENFOQUE EN LA GALERÍA" else "SIN SUJETO CLARO · FOTO NORMAL"
+                        } else errorMessage = "No se pudo guardar el retrato"
+                        finish(uri != null)
+                    }
+                }
+                return
+            }
             if (kind == BurstKind.MOMENT) {
                 processingExecutor.execute {
                     val res = runCatching {
@@ -1365,6 +1406,8 @@ class CameraEngine(private val context: Context) {
 
     companion object {
         /** Fotogramas que guarda la memoria (~0.5 s a 15–30 fps). */
+        /** Ancho mínimo del rostro (fracción del encuadre) para hacer retrato automático. */
+        const val PORTRAIT_FACE_WIDTH = 0.12f
         const val RING_FRAMES = 10
         private const val TAG = "IACamara"
     }

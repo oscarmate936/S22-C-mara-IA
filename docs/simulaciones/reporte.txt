@@ -98,3 +98,8 @@ FLUJO  persona caminando          global: medido 0.004 / real 0.000 anchos/s   s
 FLUJO  mascota corriendo + paneo  global: medido 0.072 / real 0.075 anchos/s   sujeto: medido 0.553 / real 0.559
 ORIENTACIÓN  80/80 puntos devueltos exactamente al marco vertical (0°, 90°, 180°, 270°)
 ROSTRO  ancla en los ojos (0.495, 0.240); zona de medición [0.45,0.2625][0.54,0.351] dentro de la cara: true
+=== MODO RETRATO ===
+BORDES  error en el contorno: máscara tosca 0.234 → refinada 0.045
+SUJETO  nitidez del sujeto 99 dB (intacto) · fondo: nitidez 22.8 → 1.1
+HALOS   diferencia junto al borde frente al fondo ideal: 0.0 niveles (de 255)
+BOKEH   luz puntual: centro 91, mitad del radio 89, fuera del disco 46

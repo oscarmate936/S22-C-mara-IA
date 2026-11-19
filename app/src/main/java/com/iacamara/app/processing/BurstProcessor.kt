@@ -19,6 +19,8 @@ enum class BurstKind {
     MOMENT,
     /** Varias tomas normales + una 2 pasos más oscura (siempre la última). */
     HDR,
+    /** Una toma: recorte del sujeto y fondo desenfocado (PortraitProcessor). */
+    PORTRAIT,
 }
 
 /**
@@ -102,8 +104,8 @@ class BurstProcessor(private val context: Context) {
     }
 
     private fun save(bmp: Bitmap, firstJpeg: ByteArray, rotationDegrees: Int, kind: BurstKind, count: Int): Uri? {
-        val suffix = when (kind) { BurstKind.NIGHT -> "_NOCHE"; BurstKind.MACRO -> "_MACRO"; BurstKind.HDR -> "_HDR"; BurstKind.MOMENT -> "_MOMENTO" }
-        val what = when (kind) { BurstKind.NIGHT -> "noche"; BurstKind.MACRO -> "macro apilado"; BurstKind.HDR -> "HDR"; BurstKind.MOMENT -> "mejor momento" }
+        val suffix = when (kind) { BurstKind.NIGHT -> "_NOCHE"; BurstKind.MACRO -> "_MACRO"; BurstKind.HDR -> "_HDR"; BurstKind.MOMENT -> "_MOMENTO"; BurstKind.PORTRAIT -> "_RETRATO" }
+        val what = when (kind) { BurstKind.NIGHT -> "noche"; BurstKind.MACRO -> "macro apilado"; BurstKind.HDR -> "HDR"; BurstKind.MOMENT -> "mejor momento"; BurstKind.PORTRAIT -> "retrato" }
         return PhotoSaver.save(context, bmp, firstJpeg, rotationDegrees, suffix, "IA Cámara · $what ($count tomas)")
     }
 

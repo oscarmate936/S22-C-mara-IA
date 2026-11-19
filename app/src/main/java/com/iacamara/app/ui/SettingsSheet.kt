@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Camera
+import androidx.compose.material.icons.rounded.Portrait
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
@@ -112,6 +113,8 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
             Card {
                 ToggleRow(Icons.Rounded.AutoAwesomeMotion, "Tomas múltiples automáticas", "Con poca luz combina hasta 8 fotos (menos ruido), en macro varias distancias de enfoque (todo nítido) y con mascotas, movimiento o grupos elige el mejor momento (nítido y con ojos abiertos).", prefs.multiShot, prefs::updateMultiShot)
                 Divider()
+                ToggleRow(Icons.Rounded.Portrait, "Retrato automático", "En modo IA, cuando hay una persona cerca, recorta al sujeto y desenfoca el fondo. Desde la galería de la app puedes cambiar el desenfoque o quitarlo.", prefs.autoPortrait, prefs::updateAutoPortrait)
+                Divider()
                 ToggleRow(Icons.Rounded.RawOn, "Guardar RAW (DNG)", "Guarda también el archivo en bruto del sensor para editarlo en Lightroom o Snapseed. Con RAW activo, cada foto es de una sola toma.", prefs.raw, prefs::updateRaw)
             }
 
@@ -157,7 +160,7 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text("IA Cámara ${BuildConfigInfo.VERSION}", style = Type.BodyStrong, color = Palette.Paper)
-                        Text("Fase 6 · El momento perfecto", style = Type.Body, color = Palette.Mist)
+                        Text("Fase 7 · Modo retrato", style = Type.Body, color = Palette.Mist)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -167,7 +170,8 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                 Roadmap("4", "RAW, apilado, macro y modo noche", done = true)
                 Roadmap("5", "Alineación v2 y memoria de fotogramas", done = true)
                 Roadmap("6", "Momento perfecto y disparo automático", done = true)
-                Roadmap("7", "Modo retrato con fondo desenfocado", done = false)
+                Roadmap("7", "Modo retrato y visor de fotos", done = true)
+                Roadmap("8", "Súper resolución, noche v2 y astrofotografía", done = false)
             }
         }
     }

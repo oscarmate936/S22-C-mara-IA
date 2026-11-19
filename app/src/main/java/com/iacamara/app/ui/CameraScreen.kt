@@ -1,7 +1,5 @@
 package com.iacamara.app.ui
 
-import android.content.Intent
-import android.provider.MediaStore
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -47,6 +45,7 @@ import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.DirectionsRun
+import androidx.compose.material.icons.rounded.Portrait
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -152,6 +151,7 @@ fun CameraScreen(
     }
 
     var showSettings by remember { mutableStateOf(false) }
+    var showViewer by remember { mutableStateOf(false) }
     var showScene by remember { mutableStateOf(false) }
     var showProHint by remember { mutableStateOf(false) }
     var countdown by remember { mutableIntStateOf(0) }
@@ -190,8 +190,9 @@ fun CameraScreen(
     LaunchedEffect(engine.momentNotice) {
         if (engine.momentNotice != null) { delay(3500); engine.momentNotice = null }
     }
-    LaunchedEffect(prefs.multiShot, prefs.raw) {
+    LaunchedEffect(prefs.multiShot, prefs.raw, prefs.autoPortrait) {
         engine.multiShotAuto = prefs.multiShot
+        engine.autoPortrait = prefs.autoPortrait
         engine.rawRequested = prefs.raw
     }
     LaunchedEffect(Unit) {
@@ -236,8 +237,9 @@ fun CameraScreen(
         }
     }
 
-    DisposableEffect(Unit) {
-        registerVolumeShutter { shoot() }
+    // Con el visor abierto, los botones de volumen vuelven a controlar el volumen.
+    DisposableEffect(showViewer) {
+        registerVolumeShutter(if (showViewer) null else ({ shoot() }))
         onDispose { registerVolumeShutter(null) }
     }
 
@@ -345,6 +347,7 @@ fun CameraScreen(
                                 BurstKind.MACRO -> Reason("$n enfoques", "todo el sujeto nítido")
                                 BurstKind.HDR -> null // el cerebro ya lo explica
                                 BurstKind.MOMENT -> Reason("$n tomas", "elijo la más nítida, con ojos abiertos")
+                                BurstKind.PORTRAIT -> Reason("Retrato", "fondo desenfocado como un lente luminoso")
                             }
                         }
                         BrainReasons(listOfNotNull(shotReason) + engine.brainReasons.take(if (shotReason != null) 2 else 3))
@@ -481,12 +484,7 @@ fun CameraScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                GalleryThumb(engine.lastPhoto, rotation) {
-                    val intent = engine.lastPhotoUri?.let {
-                        Intent(Intent.ACTION_VIEW).setDataAndType(it, "image/jpeg").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    } ?: Intent(Intent.ACTION_VIEW, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-                    runCatching { context.startActivity(intent) }
-                }
+                GalleryThumb(engine.lastPhoto, rotation) { showViewer = true }
                 ShutterButton(engine.mode, engine.isCapturing, countdown) { shoot() }
                 RoundGlassButton(Icons.Rounded.Cameraswitch, "Cambiar cámara", rotation) {
                     reticle = null
@@ -509,6 +507,11 @@ fun CameraScreen(
                 onDismiss = { showScene = false },
             )
         }
+        // Visor de fotos (encima de todo)
+        if (showViewer) ViewerScreen(
+            onClose = { showViewer = false },
+            onChanged = { uri -> engine.refreshThumbnail(uri) },
+        )
     }
 }
 
@@ -538,6 +541,7 @@ private fun TopBar(engine: CameraEngine, prefs: Prefs, rotation: Int, onSettings
             ShotSetting.AUTO -> Icons.Rounded.AutoAwesomeMotion
             ShotSetting.SINGLE -> Icons.Rounded.PhotoCamera
             ShotSetting.ACTION -> Icons.Rounded.DirectionsRun
+            ShotSetting.PORTRAIT -> Icons.Rounded.Portrait
             ShotSetting.NIGHT -> Icons.Rounded.NightsStay
             ShotSetting.HDR -> Icons.Rounded.HdrOn
             ShotSetting.MACRO -> Icons.Rounded.Layers

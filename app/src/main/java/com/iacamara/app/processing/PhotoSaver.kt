@@ -34,8 +34,21 @@ object PhotoSaver {
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return null
-        try {
-            resolver.openOutputStream(uri)?.use { bmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+        if (!write(context, uri, bmp, exifSource, rotationDegrees, software)) {
+            resolver.delete(uri, null, null)
+            return null
+        }
+        values.clear()
+        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        return uri
+    }
+
+    /** Escribe (o reescribe) la imagen en una foto existente de la galería, con sus datos EXIF. */
+    fun write(context: Context, uri: Uri, bmp: Bitmap, exifSource: ByteArray?, rotationDegrees: Int, software: String): Boolean {
+        val resolver = context.contentResolver
+        return try {
+            resolver.openOutputStream(uri, "wt")?.use { bmp.compress(Bitmap.CompressFormat.JPEG, 95, it) } ?: return false
             resolver.openFileDescriptor(uri, "rw")?.use { pfd ->
                 val dst = ExifInterface(pfd.fileDescriptor)
                 var srcOrientation = ExifInterface.ORIENTATION_UNDEFINED
@@ -54,13 +67,9 @@ object PhotoSaver {
                 dst.setAttribute(ExifInterface.TAG_SOFTWARE, software)
                 dst.saveAttributes()
             }
-            values.clear()
-            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-            return uri
+            true
         } catch (e: Exception) {
-            resolver.delete(uri, null, null)
-            return null
+            false
         }
     }
 }

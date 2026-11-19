@@ -37,6 +37,8 @@ Cada cambio que se sube al repositorio vuelve a compilar el APK automáticamente
 | **Precisión de la IA** (v0.6) | **Fusión temporal** de escenas (acumula la evidencia de los últimos segundos: no parpadea y cambia en ~0.3 s cuando de verdad cambias de tema). **Puntos de la cara**: mide la luz en la piel y coloca los **ojos** en el punto fuerte. **Seguimiento** del mismo sujeto por identificador. **Teléfono en horizontal**: la IA gira la imagen para reconocer caras igual. **Flujo óptico** (Lucas-Kanade) 8 veces por segundo: movimiento real del sujeto y de la imagen con error < 4 %. |
 | **HDR natural** | Combina tomas normales con una 2–3 pasos más oscura, en luz lineal y con transiciones suaves (sin halos). Mide la relación de luz real entre tomas y comprime solo las altas luces. |
 | **Tomas múltiples** (fase 4) | **Noche:** combina 6–8 fotos alineadas; el ruido baja ~√N sin el aspecto "pintado" de los filtros, descarta lo que se mueve entre tomas y aclara suavemente las sombras. **Macro+:** 5 fotos a distintas distancias de enfoque que se combinan quedándose con lo más nítido de cada una. En modo IA se eligen solas según la luz y la escena. También se pueden elegir con el botón de tipo de toma en la barra superior (Auto, 1 toma, Noche, Macro+). |
+| **Modo retrato** (fase 7) | La IA **recorta al sujeto** (persona, mascota u objeto), ajusta el borde a la foto (pelo, orejas) y **desenfoca el fondo como un lente luminoso**: más desenfoque cuanto más lejos, el suelo delante de los pies más nítido, las luces se vuelven **círculos de bokeh** y sin halos alrededor del sujeto. En modo IA se activa solo con una persona cerca; también se elige con el botón de tipo de toma (**Retrato**). |
+| **Visor de fotos** (fase 7) | Al tocar la miniatura se abre la galería de la app: deslizar entre fotos, doble toque para ampliar, cuadrícula, etiqueta de lo que hizo la IA (Retrato, Noche, HDR, Macro+, Mejor momento), compartir, editar y borrar. En los retratos, un control **f/1.2 – f/16** cambia el desenfoque o lo quita del todo (se vuelve a la foto original). |
 | **RAW (DNG)** | Guarda el archivo en bruto del sensor junto al JPG, si el lente lo permite (se activa en Ajustes). |
 
 Las fotos se guardan en **Imágenes › IA Camara**.
@@ -59,6 +61,9 @@ Paleta negro tinta con paneles de vidrio. El ámbar marca la acción y los valor
 4. ✅ RAW, apilado multi‑toma (noche), macro con *focus stacking*
 5. ✅ Base de fotografía computacional: alineación v2 (por zonas, giro y subpíxel), mezcla robusta y memoria de fotogramas
 6. ✅ El momento perfecto: modo Acción (sin retardo + instantes previos), mejor toma (nítida, ojos abiertos, sonrisa), corrección de parpadeos en grupo y disparo automático por sonrisa, mirada o mano levantada
+7. ✅ Modo retrato (recorte con IA, borde refinado, profundidad aproximada y bokeh óptico) y visor de fotos con desenfoque ajustable
+8. ⏳ Súper resolución, modo noche v2, exposición larga simulada y astrofotografía
+9. ⏳ Ajustes por zonas, enderezado automático, calificación de la foto y aprender tu gusto
 
 ## Desarrollo
 
