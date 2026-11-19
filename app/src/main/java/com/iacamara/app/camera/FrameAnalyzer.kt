@@ -91,7 +91,8 @@ class FrameAnalyzer(
     override fun analyze(image: ImageProxy) {
         ring?.let { r ->
             val ts = runCatching { image.imageInfo.timestamp }.getOrNull() ?: clock()
-            r.push(image, rotationOf(image), ts)
+            val rot = runCatching { image.imageInfo.rotationDegrees }.getOrNull() ?: rotationOf(image)
+            r.push(image, rot, ts)
         }
         val now = System.currentTimeMillis()
         if (minIntervalMs <= 0 || now - lastEmit >= minIntervalMs) {

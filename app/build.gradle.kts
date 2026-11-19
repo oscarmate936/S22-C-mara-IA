@@ -12,8 +12,8 @@ android {
         applicationId = "com.iacamara.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.8.0"
+        versionCode = 17
+        versionName = "0.9.0"
         // Solo procesadores ARM de 64 bits (todos los Galaxy modernos, incluido el S22+): APK mucho más liviano.
         ndk { abiFilters += "arm64-v8a" }
     }
@@ -69,6 +69,7 @@ dependencies {
     implementation("com.google.mlkit:image-labeling:17.0.9")
     implementation("com.google.mlkit:face-detection:16.1.7")
     implementation("com.google.mlkit:object-detection:17.0.2")
+    implementation("com.google.mlkit:pose-detection:18.0.0-beta5")
 
     // Capturas de pantalla de la interfaz en la JVM (sin teléfono).
     testImplementation("junit:junit:4.13.2")

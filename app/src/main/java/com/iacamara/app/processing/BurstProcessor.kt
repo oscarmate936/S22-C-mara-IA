@@ -15,6 +15,8 @@ import java.util.Locale
 enum class BurstKind {
     NIGHT,
     MACRO,
+    /** Ráfaga para elegir el mejor momento (nitidez, ojos abiertos, sonrisa). */
+    MOMENT,
     /** Varias tomas normales + una 2 pasos más oscura (siempre la última). */
     HDR,
 }
@@ -100,42 +102,9 @@ class BurstProcessor(private val context: Context) {
     }
 
     private fun save(bmp: Bitmap, firstJpeg: ByteArray, rotationDegrees: Int, kind: BurstKind, count: Int): Uri? {
-        val resolver = context.contentResolver
-        val name = "IACAM_" + SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(System.currentTimeMillis()) +
-            when (kind) { BurstKind.NIGHT -> "_NOCHE"; BurstKind.MACRO -> "_MACRO"; BurstKind.HDR -> "_HDR" }
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/IA Camara")
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return null
-        try {
-            resolver.openOutputStream(uri)?.use { bmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
-            resolver.openFileDescriptor(uri, "rw")?.use { pfd ->
-                val src = ExifInterface(ByteArrayInputStream(firstJpeg))
-                val dst = ExifInterface(pfd.fileDescriptor)
-                for (tag in COPY_TAGS) src.getAttribute(tag)?.let { dst.setAttribute(tag, it) }
-                val srcOrientation = src.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED)
-                val orientation = if (srcOrientation > ExifInterface.ORIENTATION_NORMAL) srcOrientation else when (rotationDegrees) {
-                    90 -> ExifInterface.ORIENTATION_ROTATE_90
-                    180 -> ExifInterface.ORIENTATION_ROTATE_180
-                    270 -> ExifInterface.ORIENTATION_ROTATE_270
-                    else -> ExifInterface.ORIENTATION_NORMAL
-                }
-                dst.setAttribute(ExifInterface.TAG_ORIENTATION, orientation.toString())
-                val what = when (kind) { BurstKind.NIGHT -> "noche"; BurstKind.MACRO -> "macro apilado"; BurstKind.HDR -> "HDR" }
-                dst.setAttribute(ExifInterface.TAG_SOFTWARE, "IA Cámara · $what ($count tomas)")
-                dst.saveAttributes()
-            }
-            values.clear()
-            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-            return uri
-        } catch (e: Exception) {
-            resolver.delete(uri, null, null)
-            return null
-        }
+        val suffix = when (kind) { BurstKind.NIGHT -> "_NOCHE"; BurstKind.MACRO -> "_MACRO"; BurstKind.HDR -> "_HDR"; BurstKind.MOMENT -> "_MOMENTO" }
+        val what = when (kind) { BurstKind.NIGHT -> "noche"; BurstKind.MACRO -> "macro apilado"; BurstKind.HDR -> "HDR"; BurstKind.MOMENT -> "mejor momento" }
+        return PhotoSaver.save(context, bmp, firstJpeg, rotationDegrees, suffix, "IA Cámara · $what ($count tomas)")
     }
 
     companion object {
@@ -144,12 +113,5 @@ class BurstProcessor(private val context: Context) {
 
         /** …u 8× (3 pasos) si una zona grande está muy quemada (contraluz fuerte, ventana). */
         fun hdrRatioFor(clippedArea: Float): Float = if (clippedArea > 0.10f) 8f else HDR_RATIO
-        private val COPY_TAGS = listOf(
-            ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL, ExifInterface.TAG_DATETIME,
-            ExifInterface.TAG_DATETIME_ORIGINAL, ExifInterface.TAG_DATETIME_DIGITIZED,
-            ExifInterface.TAG_F_NUMBER, ExifInterface.TAG_FOCAL_LENGTH,
-            ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM, ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY,
-            ExifInterface.TAG_EXPOSURE_TIME, ExifInterface.TAG_WHITE_BALANCE, ExifInterface.TAG_FLASH,
-        )
     }
 }

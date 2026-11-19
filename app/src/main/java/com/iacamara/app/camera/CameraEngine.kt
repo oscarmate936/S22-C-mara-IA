@@ -23,6 +23,7 @@ import com.iacamara.app.ai.Reason
 import com.iacamara.app.ai.Scene
 import com.iacamara.app.processing.BurstKind
 import com.iacamara.app.processing.BurstProcessor
+import com.iacamara.app.processing.MomentProcessor
 import com.iacamara.app.ai.SceneBrain
 import com.iacamara.app.ai.SceneDetector
 import com.iacamara.app.ai.SceneResult
@@ -69,7 +70,7 @@ enum class Param { ISO, SHUTTER, WB, FOCUS, EV }
 enum class FlashSetting { OFF, AUTO, ON }
 
 /** Cómo se toma la foto. AUTO = lo decide la IA. */
-enum class ShotSetting(val label: String) { AUTO("Auto"), SINGLE("1 toma"), NIGHT("Noche"), HDR("HDR"), MACRO("Macro+") }
+enum class ShotSetting(val label: String) { AUTO("Auto"), SINGLE("1 toma"), ACTION("Acción"), NIGHT("Noche"), HDR("HDR"), MACRO("Macro+") }
 enum class AspectSetting(val label: String) { RATIO_4_3("4:3"), RATIO_16_9("16:9") }
 
 /**
@@ -267,6 +268,23 @@ class CameraEngine(private val context: Context) {
     /** Memoria de fotogramas activa: el análisis pasa a alta resolución (más batería). */
     var frameRingEnabled: Boolean = false
         set(v) { if (field != v) { field = v; frameRing.clear(); rebind() } }
+
+    // ---------------- Momento perfecto y disparo automático (fase 6) ----------------
+    /** Resultado de la última "foto perfecta" ("Mejor de 14 · 1 cara corregida"). */
+    var momentNotice by mutableStateOf<String?>(null)
+    private val autoShutter = com.iacamara.app.ai.AutoShutter()
+    var autoShutterMode: com.iacamara.app.ai.AutoShutterMode
+        get() = autoShutter.mode
+        set(v) { autoShutter.mode = v; autoShutterState = com.iacamara.app.ai.AutoShutter.State.WAITING; autoShutterProgress = 0f }
+    var autoShutterState by mutableStateOf(com.iacamara.app.ai.AutoShutter.State.WAITING)
+        private set
+    var autoShutterProgress by mutableFloatStateOf(0f)
+        private set
+    /** Aumenta cada vez que el disparo automático decide tomar la foto. */
+    var autoShutterFire by mutableIntStateOf(0)
+        private set
+    /** Cuántas caras ve la IA ahora (fotos de grupo → corregir parpadeos). */
+    private var faceCount = 0
     private var analysisUseCase: ImageAnalysis? = null
     /** Rotación que endereza los fotogramas en el marco vertical de la pantalla. */
     @Volatile private var portraitRotation = 90
@@ -455,8 +473,17 @@ class CameraEngine(private val context: Context) {
         val rawSupported = rawRequested && targetInfo != null && runCatching {
             ImageCapture.OUTPUT_FORMAT_RAW_JPEG in ImageCapture.getImageCaptureCapabilities(targetInfo).supportedOutputFormats
         }.getOrDefault(false)
+        // En "Acción": captura sin retardo (el instante exacto del toque) si el teléfono lo admite.
+        val action = shotSetting == ShotSetting.ACTION
+        val zsl = action && targetInfo != null && runCatching { targetInfo.isZslSupported }.getOrDefault(false)
         val captureBuilder = ImageCapture.Builder()
-            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            .setCaptureMode(
+                when {
+                    zsl -> ImageCapture.CAPTURE_MODE_ZERO_SHUTTER_LAG
+                    action -> ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
+                    else -> ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
+                },
+            )
             .setResolutionSelector(
                 ResolutionSelector.Builder()
                     .setAspectRatioStrategy(ratio)
@@ -867,6 +894,9 @@ class CameraEngine(private val context: Context) {
         if (now - lastAi < 330) return false
         lastAi = now
         val mirror = useFront
+        val asm = autoShutter.mode
+        detector.classify = asm == com.iacamara.app.ai.AutoShutterMode.SMILE || asm == com.iacamara.app.ai.AutoShutterMode.LOOK
+        detector.detectHand = asm == com.iacamara.app.ai.AutoShutterMode.HAND
         detector.process(img, mirror, portraitRotation) { d -> mainHandler.post { onDetection(d) } }
         return true
     }
@@ -910,6 +940,14 @@ class CameraEngine(private val context: Context) {
             fa.region = subj?.meterBox?.let { NormRect(it.left, it.top, it.right, it.bottom) }
         }
         snowy = d.labels.any { (label, conf) -> conf >= 0.6f && (label == "Snow" || label == "Skiing" || label == "Glacier") }
+        faceCount = d.faces.size
+        if (autoShutter.mode != com.iacamara.app.ai.AutoShutterMode.OFF && !isCapturing) {
+            val cues = d.faceDetails.map { com.iacamara.app.ai.FaceCue(it.smile, it.eyesOpen, it.yaw, it.pitch) }
+            val st = autoShutter.update(cues, d.handRaised)
+            autoShutterState = st
+            autoShutterProgress = autoShutter.progress
+            if (st == com.iacamara.app.ai.AutoShutter.State.FIRE) autoShutterFire++
+        }
         maybeAutoLens(result.scene)
         if (appliedScene != null && appliedScene != result.scene && result.scene != Scene.GENERAL) appliedScene = null
         subj?.let { focusOnSubject(it) }
@@ -1073,6 +1111,9 @@ class CameraEngine(private val context: Context) {
 
     fun cycleShot() {
         shotSetting = ShotSetting.entries[(shotSetting.ordinal + 1) % ShotSetting.entries.size]
+        // "Acción" usa la memoria de fotogramas y la captura sin retardo (requiere reconfigurar).
+        val wantRing = shotSetting == ShotSetting.ACTION
+        if (frameRingEnabled != wantRing) frameRingEnabled = wantRing // reconfigura (memoria + captura sin retardo)
     }
 
     /** Toma múltiple que corresponde ahora (tipo y número de tomas), o null para una sola. */
@@ -1080,6 +1121,7 @@ class CameraEngine(private val context: Context) {
         if (rawActive) return null
         val kind = when (shotSetting) {
             ShotSetting.SINGLE -> null
+            ShotSetting.ACTION -> BurstKind.MOMENT
             ShotSetting.NIGHT -> BurstKind.NIGHT
             ShotSetting.HDR -> if (caps.manualSensor) BurstKind.HDR else null
             ShotSetting.MACRO -> if (caps.manualFocus) BurstKind.MACRO else null
@@ -1093,6 +1135,8 @@ class CameraEngine(private val context: Context) {
                         sc == Scene.MACRO && caps.manualFocus && live.focusDiopters > 5f -> BurstKind.MACRO
                         sc == Scene.NIGHT || dark -> BurstKind.NIGHT
                         brainWantsHdr -> BurstKind.HDR
+                        // Mascotas, animales o algo moviéndose, y fotos de grupo (parpadeos): el mejor momento.
+                        sc == Scene.PET || sc == Scene.ANIMAL || subjectSpeed > 0.15f || faceCount >= 2 -> BurstKind.MOMENT
                         else -> null
                     }
                 }
@@ -1102,6 +1146,7 @@ class CameraEngine(private val context: Context) {
             BurstKind.NIGHT -> if (steady) 6 else 8
             BurstKind.MACRO -> 5
             BurstKind.HDR -> 3
+            BurstKind.MOMENT -> 4
         }
         return kind to n
     }
@@ -1112,6 +1157,7 @@ class CameraEngine(private val context: Context) {
             BurstKind.NIGHT -> "NOCHE · $n TOMAS"
             BurstKind.MACRO -> "MACRO+ · $n ENFOQUES"
             BurstKind.HDR -> "HDR · $n TOMAS"
+            BurstKind.MOMENT -> if (frameRingEnabled) "ACCIÓN · MEJOR MOMENTO" else "MEJOR MOMENTO · $n TOMAS"
         }
     }
 
@@ -1122,6 +1168,8 @@ class CameraEngine(private val context: Context) {
     private fun captureBurst(ic: ImageCapture, kind: BurstKind, n: Int, onDone: (Boolean) -> Unit) {
         val frames = ArrayList<ByteArray>(n)
         var rotation = 0
+        // Instantes previos al toque (memoria de fotogramas, si está activa).
+        val previous = if (kind == BurstKind.MOMENT && frameRingEnabled) frameRing.recent(RING_FRAMES) else emptyList()
         burstLock = true
         applyControls()
         val baseFocus = (manualFocus ?: live.focusDiopters).coerceAtLeast(0.5f)
@@ -1157,7 +1205,28 @@ class CameraEngine(private val context: Context) {
             burstExposure = null
             burstLock = false
             applyControls()
-            burstStatus = "Combinando $n tomas…"
+            burstStatus = if (kind == BurstKind.MOMENT) "Eligiendo el mejor momento…" else "Combinando $n tomas…"
+            if (kind == BurstKind.MOMENT) {
+                processingExecutor.execute {
+                    val res = runCatching {
+                        MomentProcessor(context).process(frames, rotation, previous) { msg -> mainHandler.post { burstStatus = msg } }
+                    }.onFailure { Log.e(TAG, "Fallo al elegir el momento", it) }.getOrNull()
+                    val uri = res?.uri
+                    val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
+                    mainHandler.post {
+                        if (uri != null) {
+                            lastPhotoUri = uri
+                            thumb?.let { lastPhoto = it }
+                            captureCount++
+                            momentNotice = "MEJOR DE ${res.candidates}" +
+                                (if (res.fromMemory) " · INSTANTE PREVIO" else "") +
+                                (if (res.facesFixed > 0) " · ${res.facesFixed} CARA(S) CORREGIDA(S)" else "")
+                        } else errorMessage = "No se pudo elegir la foto"
+                        finish(uri != null)
+                    }
+                }
+                return
+            }
             processingExecutor.execute {
                 val uri = runCatching {
                     BurstProcessor(context).process(

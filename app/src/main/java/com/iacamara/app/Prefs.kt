@@ -44,6 +44,10 @@ class Prefs(context: Context) {
     /** Ya se mostró el aviso de cómo ajustar en PRO. */
     var proHintShown by mutableStateOf(sp.getBoolean("proHint", false))
         private set
+    var autoShutter by mutableStateOf(
+        com.iacamara.app.ai.AutoShutterMode.entries.getOrElse(sp.getInt("autoShutter", 0)) { com.iacamara.app.ai.AutoShutterMode.OFF },
+    )
+        private set
     var timerSeconds by mutableStateOf(sp.getInt("timer", 0))
         private set
 
@@ -71,6 +75,7 @@ class Prefs(context: Context) {
     fun updateMultiShot(v: Boolean) { multiShot = v; sp.edit().putBoolean("multiShot", v).apply() }
     fun updateRaw(v: Boolean) { raw = v; sp.edit().putBoolean("raw", v).apply() }
     fun markProHintShown() { proHintShown = true; sp.edit().putBoolean("proHint", true).apply() }
+    fun updateAutoShutter(v: com.iacamara.app.ai.AutoShutterMode) { autoShutter = v; sp.edit().putInt("autoShutter", v.ordinal).apply() }
     fun cycleTimer() {
         timerSeconds = when (timerSeconds) { 0 -> 3; 3 -> 10; else -> 0 }
         sp.edit().putInt("timer", timerSeconds).apply()

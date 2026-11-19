@@ -46,6 +46,8 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.DirectionsRun
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.FlashAuto
@@ -184,6 +186,10 @@ fun CameraScreen(
         engine.autoLens = prefs.autoLens
     }
     LaunchedEffect(prefs.torchFlash) { engine.torchFlash = prefs.torchFlash }
+    LaunchedEffect(prefs.autoShutter) { engine.autoShutterMode = prefs.autoShutter }
+    LaunchedEffect(engine.momentNotice) {
+        if (engine.momentNotice != null) { delay(3500); engine.momentNotice = null }
+    }
     LaunchedEffect(prefs.multiShot, prefs.raw) {
         engine.multiShotAuto = prefs.multiShot
         engine.rawRequested = prefs.raw
@@ -213,6 +219,20 @@ fun CameraScreen(
             engine.capture()
             shutterFlash.snapTo(0.9f)
             shutterFlash.animateTo(0f, tween(260))
+        }
+    }
+
+    // Disparo automático (sonrisa, mirada o mano): sin temporizador, en el instante justo.
+    var lastAutoFire by remember { mutableIntStateOf(engine.autoShutterFire) }
+    LaunchedEffect(engine.autoShutterFire) {
+        if (engine.autoShutterFire != lastAutoFire) {
+            lastAutoFire = engine.autoShutterFire
+            if (!engine.isCapturing && countdown == 0) {
+                if (prefs.haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                engine.capture()
+                shutterFlash.snapTo(0.9f)
+                shutterFlash.animateTo(0f, tween(260))
+            }
         }
     }
 
@@ -324,6 +344,7 @@ fun CameraScreen(
                                 BurstKind.NIGHT -> Reason("$n tomas", "combino fotos: mucho menos ruido")
                                 BurstKind.MACRO -> Reason("$n enfoques", "todo el sujeto nítido")
                                 BurstKind.HDR -> null // el cerebro ya lo explica
+                                BurstKind.MOMENT -> Reason("$n tomas", "elijo la más nítida, con ojos abiertos")
                             }
                         }
                         BrainReasons(listOfNotNull(shotReason) + engine.brainReasons.take(if (shotReason != null) 2 else 3))
@@ -343,6 +364,19 @@ fun CameraScreen(
                     }
                 }
                 engine.errorMessage?.let { InfoPill(it.uppercase(), Palette.Signal, modifier = Modifier.padding(top = 6.dp)) }
+                AnimatedVisibility(engine.momentNotice != null, enter = fadeIn(), exit = fadeOut()) {
+                    InfoPill(engine.momentNotice ?: "", Palette.Level, Icons.Rounded.AutoAwesome, Modifier.padding(top = 6.dp))
+                }
+                val asMode = prefs.autoShutter
+                AnimatedVisibility(asMode != com.iacamara.app.ai.AutoShutterMode.OFF && engine.burstStatus == null, enter = fadeIn(), exit = fadeOut()) {
+                    val holding = engine.autoShutterState == com.iacamara.app.ai.AutoShutter.State.HOLDING
+                    val label = when {
+                        engine.autoShutterState == com.iacamara.app.ai.AutoShutter.State.COOLDOWN -> "LISTO · ESPERANDO OTRA VEZ"
+                        holding -> "¡ASÍ! " + "●".repeat((engine.autoShutterProgress * 5).toInt().coerceIn(1, 5))
+                        else -> asMode.hint
+                    }
+                    InfoPill(label, if (holding) Palette.Level else Palette.Cyan, Icons.Rounded.CameraAlt, Modifier.padding(top = 6.dp))
+                }
                 val burstLabel = engine.burstLabel()
                 AnimatedVisibility(burstLabel != null && engine.burstStatus == null && engine.shotSetting != ShotSetting.AUTO, enter = fadeIn(), exit = fadeOut()) {
                     InfoPill(burstLabel ?: "", Palette.Amber, Icons.Rounded.Layers, Modifier.padding(top = 6.dp))
@@ -503,6 +537,7 @@ private fun TopBar(engine: CameraEngine, prefs: Prefs, rotation: Int, onSettings
         val shotIcon = when (engine.shotSetting) {
             ShotSetting.AUTO -> Icons.Rounded.AutoAwesomeMotion
             ShotSetting.SINGLE -> Icons.Rounded.PhotoCamera
+            ShotSetting.ACTION -> Icons.Rounded.DirectionsRun
             ShotSetting.NIGHT -> Icons.Rounded.NightsStay
             ShotSetting.HDR -> Icons.Rounded.HdrOn
             ShotSetting.MACRO -> Icons.Rounded.Layers

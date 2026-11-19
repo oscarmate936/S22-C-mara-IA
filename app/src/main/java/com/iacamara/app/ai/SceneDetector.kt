@@ -25,6 +25,12 @@ class FaceInfo(
     val trackId: Int? = null,
     /** Hacia dónde mira la persona (vector en el marco vertical; null = de frente). */
     val look: PointF? = null,
+    /** Probabilidad de sonrisa y de ojos abiertos (solo con el disparo automático activo). */
+    val smile: Float? = null,
+    val eyesOpen: Float? = null,
+    /** Giro de la cabeza (grados): izquierda/derecha y arriba/abajo. 0,0 = mira a la cámara. */
+    val yaw: Float = 0f,
+    val pitch: Float = 0f,
 )
 
 /** Lo que la IA vio en un fotograma. Las cajas están normalizadas 0..1 en el marco del visor. */
@@ -36,6 +42,8 @@ class Detection(
     val faceDetails: List<FaceInfo> = faces.map { FaceInfo(it) },
     /** Identificador de seguimiento del objeto principal (el mismo mientras sea el mismo objeto). */
     val prominentTrackId: Int? = null,
+    /** Alguien levanta la mano por encima de la cabeza (solo con el disparo por gesto activo). */
+    val handRaised: Boolean = false,
 )
 
 /**
@@ -48,14 +56,31 @@ class SceneDetector(private val executor: Executor) {
     private val labeler = ImageLabeling.getClient(
         ImageLabelerOptions.Builder().setConfidenceThreshold(0.5f).build(),
     )
-    private val faces = FaceDetection.getClient(
+    private fun faceClient(classify: Boolean) = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
             .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+            .apply { if (classify) setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL) }
             .enableTracking()
             .setMinFaceSize(0.08f)
             .build(),
     )
+    private val faces by lazy { faceClient(false) }
+    /** Con sonrisa y ojos abiertos: solo se crea si se usa el disparo automático. */
+    private val facesClassify by lazy { faceClient(true) }
+    /** Postura del cuerpo (para "levanta la mano"): solo si se usa ese disparo. */
+    private val pose by lazy {
+        com.google.mlkit.vision.pose.PoseDetection.getClient(
+            com.google.mlkit.vision.pose.defaults.PoseDetectorOptions.Builder()
+                .setDetectorMode(com.google.mlkit.vision.pose.defaults.PoseDetectorOptions.STREAM_MODE)
+                .build(),
+        )
+    }
+
+    /** Medir sonrisa / ojos abiertos (disparo automático por sonrisa o mirada). */
+    @Volatile var classify = false
+    /** Detectar la mano levantada (disparo por gesto). */
+    @Volatile var detectHand = false
     private val objects = ObjectDetection.getClient(
         ObjectDetectorOptions.Builder()
             .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
@@ -84,10 +109,11 @@ class SceneDetector(private val executor: Executor) {
         val h = (if (rotation % 180 == 0) proxy.height else proxy.width).toFloat()
 
         val tLabels = labeler.process(input)
-        val tFaces = faces.process(input)
+        val tFaces = (if (classify) facesClassify else faces).process(input)
         val tObjects = objects.process(input)
+        val tPose = if (detectHand) pose.process(input) else null
 
-        Tasks.whenAllComplete(tLabels, tFaces, tObjects).addOnCompleteListener(executor) {
+        Tasks.whenAllComplete(listOfNotNull(tLabels, tFaces, tObjects, tPose)).addOnCompleteListener(executor) {
             proxy.close()
             busy = false
             fun box(r: Rect) = Orient.rectToPortrait(r.left / w, r.top / h, r.right / w, r.bottom / h, delta, mirror)
@@ -107,10 +133,25 @@ class SceneDetector(private val executor: Executor) {
                         if (kotlin.math.abs(yaw) < 12f) null
                         else Orient.vectorToPortrait((yaw / 40f).coerceIn(-1f, 1f), 0f, delta, mirror)
                     },
+                    smile = f.smilingProbability,
+                    eyesOpen = listOfNotNull(f.leftEyeOpenProbability, f.rightEyeOpenProbability).minOrNull(),
+                    yaw = f.headEulerAngleY,
+                    pitch = f.headEulerAngleX,
                 )
             }
             val obj = if (tObjects.isSuccessful) tObjects.result.firstOrNull() else null
-            onResult(Detection(labels, details.map { it.box }, obj?.let { box(it.boundingBox) }, details, obj?.trackingId))
+            // Mano levantada: una muñeca claramente por encima de la nariz (imagen enderezada: y hacia abajo).
+            val hand = tPose?.takeIf { it.isSuccessful }?.result?.let { p ->
+                val nose = p.getPoseLandmark(com.google.mlkit.vision.pose.PoseLandmark.NOSE)
+                val wrists = listOfNotNull(
+                    p.getPoseLandmark(com.google.mlkit.vision.pose.PoseLandmark.LEFT_WRIST),
+                    p.getPoseLandmark(com.google.mlkit.vision.pose.PoseLandmark.RIGHT_WRIST),
+                )
+                nose != null && nose.inFrameLikelihood > 0.5f && wrists.any {
+                    it.inFrameLikelihood > 0.6f && it.position.y < nose.position.y - h * 0.05f
+                }
+            } ?: false
+            onResult(Detection(labels, details.map { it.box }, obj?.let { box(it.boundingBox) }, details, obj?.trackingId, hand))
         }
     }
 

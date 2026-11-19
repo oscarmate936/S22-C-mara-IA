@@ -58,6 +58,7 @@ Paleta negro tinta con paneles de vidrio. El ámbar marca la acción y los valor
 3. ✅ "Cerebro fotógrafo": decisiones automáticas de velocidad, exposición, blancos y lente
 4. ✅ RAW, apilado multi‑toma (noche), macro con *focus stacking*
 5. ✅ Base de fotografía computacional: alineación v2 (por zonas, giro y subpíxel), mezcla robusta y memoria de fotogramas
+6. ✅ El momento perfecto: modo Acción (sin retardo + instantes previos), mejor toma (nítida, ojos abiertos, sonrisa), corrección de parpadeos en grupo y disparo automático por sonrisa, mirada o mano levantada
 
 ## Desarrollo
 

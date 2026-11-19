@@ -91,9 +91,26 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                 ToggleRow(Icons.Rounded.GridGoldenratio, "Entrenador de composición", "Te muestra a dónde mover el sujeto o el horizonte.", prefs.coach, prefs::updateCoach)
             }
 
+            Section("DISPARO AUTOMÁTICO")
+            Card {
+                Text("La foto se toma sola en el instante justo", style = Type.BodyStrong, color = Palette.Paper)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Sonrisa: cuando todos sonríen con los ojos abiertos. Mirada: cuando todos miran a la cámara. " +
+                        "Mano: al levantar una mano por encima de la cabeza (ideal para fotos a distancia).",
+                    style = Type.Body, color = Palette.Mist,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.iacamara.app.ai.AutoShutterMode.entries.forEach { m ->
+                        ChoiceChip(m.label, null, prefs.autoShutter == m, accent = if (m == com.iacamara.app.ai.AutoShutterMode.OFF) Palette.Mist else Palette.Cyan) { prefs.updateAutoShutter(m) }
+                    }
+                }
+            }
+
             Section("CALIDAD DE IMAGEN")
             Card {
-                ToggleRow(Icons.Rounded.AutoAwesomeMotion, "Tomas múltiples automáticas", "Con poca luz combina hasta 8 fotos (menos ruido) y en macro varias distancias de enfoque (todo nítido). Mantén el teléfono firme unos segundos.", prefs.multiShot, prefs::updateMultiShot)
+                ToggleRow(Icons.Rounded.AutoAwesomeMotion, "Tomas múltiples automáticas", "Con poca luz combina hasta 8 fotos (menos ruido), en macro varias distancias de enfoque (todo nítido) y con mascotas, movimiento o grupos elige el mejor momento (nítido y con ojos abiertos).", prefs.multiShot, prefs::updateMultiShot)
                 Divider()
                 ToggleRow(Icons.Rounded.RawOn, "Guardar RAW (DNG)", "Guarda también el archivo en bruto del sensor para editarlo en Lightroom o Snapseed. Con RAW activo, cada foto es de una sola toma.", prefs.raw, prefs::updateRaw)
             }
@@ -140,7 +157,7 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text("IA Cámara ${BuildConfigInfo.VERSION}", style = Type.BodyStrong, color = Palette.Paper)
-                        Text("Fase 4 · Calidad de imagen", style = Type.Body, color = Palette.Mist)
+                        Text("Fase 6 · El momento perfecto", style = Type.Body, color = Palette.Mist)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -148,6 +165,9 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                 Roadmap("2", "IA que reconoce la escena y al sujeto", done = true)
                 Roadmap("3", "Cerebro fotógrafo: ajuste automático experto", done = true)
                 Roadmap("4", "RAW, apilado, macro y modo noche", done = true)
+                Roadmap("5", "Alineación v2 y memoria de fotogramas", done = true)
+                Roadmap("6", "Momento perfecto y disparo automático", done = true)
+                Roadmap("7", "Modo retrato con fondo desenfocado", done = false)
             }
         }
     }
