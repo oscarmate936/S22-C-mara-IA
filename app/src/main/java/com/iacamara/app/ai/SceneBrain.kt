@@ -138,6 +138,10 @@ enum class Scene(
     ),
 }
 
+/** Nombre corto para la interfaz. Antes del mediodía, la luz dorada es un amanecer. */
+fun Scene.shortTitle(hour: Int = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)): String =
+    if (this == Scene.SUNSET) (if (hour < 12) "Amanecer" else "Atardecer") else title.substringBefore(" ·")
+
 /** Un sujeto en el visor, en coordenadas normalizadas 0..1. */
 data class Subject(
     val box: RectF,

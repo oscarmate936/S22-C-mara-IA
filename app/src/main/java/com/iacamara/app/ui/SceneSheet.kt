@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.iacamara.app.ai.SceneResult
+import com.iacamara.app.ai.shortTitle
 import com.iacamara.app.camera.ExposureMath
 import com.iacamara.app.camera.WhiteBalance
 import com.iacamara.app.camera.formatFactor
@@ -72,7 +73,7 @@ fun SceneSheet(result: SceneResult, applied: Boolean, autoMode: Boolean = false,
                 Text("${(result.confidence.coerceIn(0f, 1f) * 100).toInt()}% seguro", style = Type.ReadoutSmall, color = Palette.Mist)
             }
             Spacer(Modifier.height(6.dp))
-            Text(scene.title, style = Type.Title, color = Palette.Paper)
+            Text(if (scene == com.iacamara.app.ai.Scene.SUNSET) scene.shortTitle() else scene.title, style = Type.Title, color = Palette.Paper)
             Spacer(Modifier.height(4.dp))
             Text(scene.why, style = Type.Body, color = Palette.Mist)
             if (result.evidence.isNotEmpty()) {

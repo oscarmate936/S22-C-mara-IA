@@ -26,6 +26,7 @@ import com.iacamara.app.processing.BurstProcessor
 import com.iacamara.app.ai.SceneBrain
 import com.iacamara.app.ai.SceneDetector
 import com.iacamara.app.ai.SceneResult
+import com.iacamara.app.ai.shortTitle
 import com.iacamara.app.ai.Subject
 import androidx.camera.camera2.interop.Camera2CameraControl
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -837,7 +838,7 @@ class CameraEngine(private val context: Context) {
         if (abs(target.factor - current.baseFactor * zoomRatio) < 0.3f) return
         lensBeforeAuto = current
         selectLens(target, byUser = false)
-        lensNotice = "LENTE ${target.label}× · ${sc.title.substringBefore(" ·").uppercase()}"
+        lensNotice = "LENTE ${target.label}× · ${sc.shortTitle().uppercase()}"
     }
 
     fun undoAutoLens() {

@@ -129,7 +129,7 @@ class PhotoBrain {
         // ------------------------------------------------ Blancos
         val wb = i.scene.recipe?.wb ?: WhiteBalance.AUTO
         if (wb != WhiteBalance.AUTO) {
-            reasons += Reason("Blancos ${wb.label}", if (i.scene == Scene.SUNSET) "conserva el tono dorado" else "colores naturales de luz de día")
+            reasons += Reason(wb.label, if (i.scene == Scene.SUNSET) "blancos: conservo el tono dorado" else "blancos: colores naturales de día")
         }
 
         // ------------------------------------------------ Velocidad

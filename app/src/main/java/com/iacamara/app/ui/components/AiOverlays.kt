@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.iacamara.app.ai.CompositionGoal
 import com.iacamara.app.ai.SceneResult
+import com.iacamara.app.ai.shortTitle
 import com.iacamara.app.ai.Subject
 import com.iacamara.app.ui.theme.Palette
 import com.iacamara.app.ui.theme.Type
@@ -180,7 +181,7 @@ fun SceneChip(result: SceneResult?, applied: Boolean, showApply: Boolean = true,
                 Icon(Icons.Rounded.AutoAwesome, null, tint = Palette.Cyan, modifier = Modifier.size(13.dp))
                 Spacer(Modifier.width(6.dp))
                 AnimatedContent(r.scene, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "scene") { sc ->
-                    Text(sc.title.substringBefore(" ·").uppercase(), style = Type.Label, color = Palette.Paper)
+                    Text(sc.shortTitle().uppercase(), style = Type.Label, color = Palette.Paper)
                 }
             }
             if (showApply && r.scene.recipe != null) {
