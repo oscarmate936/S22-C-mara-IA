@@ -43,6 +43,8 @@ class BrainInput(
     val p98: Float = 0.9f,
     /** Movimiento de toda la imagen en el encuadre (anchos/s), medido por flujo óptico. */
     val imageMotion: Float = 0f,
+    /** Factor de lente/zoom actual (1 = principal sin zoom). */
+    val zoomFactor: Float = 1f,
 )
 
 class BrainDecision(
@@ -213,10 +215,20 @@ class PhotoBrain(private val clock: () -> Long = { System.currentTimeMillis() })
 
         // ------------------------------------------------ Lente
         var lens = i.scene.recipe?.lensFactor
+        // Tamaño del sujeto como se vería en 1×: así la decisión no cambia después del zoom
+        // (a 2× la cara se ve el doble de grande, pero sigue siendo la misma escena).
+        val z = i.zoomFactor.coerceAtLeast(0.3f)
         when (i.scene) {
             Scene.GENERAL -> lens = null
-            Scene.PORTRAIT -> if ((i.subject?.box?.height() ?: 0f) > 0.3f) lens = null // ya estás cerca
-            Scene.ANIMAL -> if ((i.subject?.box?.width() ?: 0f) > 0.35f) lens = null
+            // Retrato: el lente que deja la cara a un tamaño cómodo (hasta ~45 % del alto).
+            Scene.PORTRAIT -> i.subject?.let { s ->
+                val h1 = s.box.height() / z
+                if (lens != null && h1 * lens > 0.45f) lens = if (h1 > 0.45f) null else 1f
+            }
+            Scene.ANIMAL -> i.subject?.let { s ->
+                val w1 = s.box.width() / z
+                if (lens != null && w1 * lens > 0.6f) lens = null
+            }
             else -> Unit
         }
         // Con poca luz el teleobjetivo (f/2.4) rinde peor: el 1× (f/1.8) es más luminoso.

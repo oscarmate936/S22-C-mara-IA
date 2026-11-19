@@ -251,6 +251,7 @@ class CameraEngine(private val context: Context) {
     private var lastFocusY = -1f
 
     private val photoBrain = PhotoBrain()
+    private val lensPolicy = com.iacamara.app.ai.LensPolicy()
     private val processingExecutor = Executors.newSingleThreadExecutor()
     /** Enfoque temporal durante un apilado de enfoque. */
     private var burstFocus: Float? = null
@@ -278,9 +279,6 @@ class CameraEngine(private val context: Context) {
     private var lastSubjectY = -1f
     private var lastSubjectTime = 0L
     private var lastLensDecision: Float? = null
-    private var stableScene: Scene? = null
-    private var stableSince = 0L
-    private var autoLensScene: Scene? = null
     private var lastUserLens = 0L
     private var lensBeforeAuto: Lens? = null
 
@@ -387,7 +385,7 @@ class CameraEngine(private val context: Context) {
     }
 
     fun selectLens(lens: Lens, byUser: Boolean = true) {
-        if (byUser) { lastUserLens = System.currentTimeMillis(); lensNotice = null }
+        if (byUser) { lastUserLens = System.currentTimeMillis(); lensNotice = null; lensPolicy.onUserLens() }
         if (lens == activeLens) {
             camera?.cameraControl?.setZoomRatio(lens.zoom)
             return
@@ -410,6 +408,7 @@ class CameraEngine(private val context: Context) {
     fun pinchZoom(scale: Float) {
         val cam = camera ?: return
         lastUserLens = System.currentTimeMillis()
+        lensPolicy.onUserLens()
         val z = cam.cameraInfo.zoomState.value ?: return
         val next = (z.zoomRatio * scale).coerceIn(z.minZoomRatio, z.maxZoomRatio)
         cam.cameraControl.setZoomRatio(next)
@@ -805,6 +804,7 @@ class CameraEngine(private val context: Context) {
                 clippedArea = st.clippedArea, shadowArea = st.shadowArea,
                 subjectLuma = if (subject != null) st.subjectLuma else null,
                 snowy = snowy, p98 = st.p98, imageMotion = imageMotion,
+                zoomFactor = (activeLens?.baseFactor ?: 1f) * zoomRatio,
             ),
             engagedBefore,
         )
@@ -831,18 +831,14 @@ class CameraEngine(private val context: Context) {
         if (changed) applyControls()
     }
 
-    /** Cambia de lente solo cuando la escena es estable y la persona no eligió uno hace poco. */
+    /** Cambio de lente automático, con la estabilidad de un fotógrafo (ver [LensPolicy]). */
     private fun maybeAutoLens(sc: Scene) {
-        val now = System.currentTimeMillis()
-        if (sc != stableScene) { stableScene = sc; stableSince = now; return }
         if (!brainActive || !autoLens || useFront || isCapturing) return
-        if (now - stableSince < 2000 || now - lastUserLens < 15000 || autoLensScene == sc) return
-        val factor = lastLensDecision ?: return
         val current = activeLens ?: return
-        val target = lenses.filter { it.factor <= 3.5f }
-            .minByOrNull { abs(kotlin.math.ln(it.factor / factor)) } ?: return
-        autoLensScene = sc
-        if (abs(target.factor - current.baseFactor * zoomRatio) < 0.3f) return
+        val currentFactor = current.baseFactor * zoomRatio
+        val candidates = lenses.filter { it.factor <= 3.5f }
+        val targetFactor = lensPolicy.decide(sc, scene?.confidence ?: 0f, lastLensDecision, currentFactor, candidates.map { it.factor }) ?: return
+        val target = candidates.minByOrNull { abs(it.factor - targetFactor) } ?: return
         lensBeforeAuto = current
         selectLens(target, byUser = false)
         lensNotice = "LENTE ${target.label}× · ${sc.shortTitle().uppercase()}"
