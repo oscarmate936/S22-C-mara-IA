@@ -5,6 +5,11 @@ ALINEACIÓN  coffee.png               error medio 0.00 px
 ALINEACIÓN  rocket.jpg               error medio 0.00 px
 ALINEACIÓN  hubble_deep_field.jpg    error medio 0.00 px
 ALINEACIÓN  aciertos (error ≤ 1 px): 30/30
+=== ALINEACIÓN v2: desplazamiento + giro + escala ===
+astronaut.png    giro real +0.50° → medido +0.48°   error en las esquinas 0.19 px   (47 zonas)
+coffee.png       giro real -0.35° → medido -0.31°   error en las esquinas 0.49 px   (34 zonas)
+rocket.jpg       giro real +0.20° → medido +0.22°   error en las esquinas 0.45 px   (33 zonas)
+chelsea.png      giro real +0.00° → medido +0.00°   error en las esquinas 0.06 px   (24 zonas)
 === AMANECER: brillo del horizonte y silueta ===
 decisión de la IA: -1.0 EV · HDR recomendado: true · HDR (recupero el color del cielo sin aclarar la silueta), -1.0 EV (protejo el cielo y las luces grandes), Sol (blancos: conservo el tono dorado)
 resplandor  sin HDR: color 21%, quemado 2%   →   con HDR: color 48%, quemado 0%
@@ -70,8 +75,14 @@ NOCHE  rocket_f150.0_rot                  1 toma:  22.8 dB   8 tomas:  28.2 dB  
 NOCHE  coffee_f150.0_fantasma             1 toma:  23.7 dB   8 tomas:  29.9 dB   mejora:  +6.2 dB
        fantasma: error medio en la trayectoria del objeto = 5.5 niveles (de 255)
 === MODO NOCHE DE PUNTA A PUNTA (JPEG real → BurstProcessor) ===
-tomas usadas: 8/8   progreso informado: [1, 2, 3, 4, 5, 6, 7, 8]   tiempo: 216 ms (600×400)
+tomas usadas: 8/8   progreso informado: [1, 2, 3, 4, 5, 6, 7, 8]   tiempo: 473 ms (600×400)
 1 toma: 27.2 dB   8 tomas combinadas: 32.7 dB   mejora +5.5 dB
+=== MODO NOCHE v2 vs v1 (8 tomas, pulso ±10 px subpíxel) ===
+NOCHE  astronaut                  1 toma  25.1 dB · v1  30.1 dB · v2  30.4 dB   (v2 vs v1 +0.3 dB)
+NOCHE  astronaut_giro             1 toma  25.1 dB · v1  28.8 dB · v2  30.5 dB   (v2 vs v1 +1.7 dB)
+NOCHE  rocket_giro                1 toma  24.0 dB · v1  28.5 dB · v2  30.2 dB   (v2 vs v1 +1.7 dB)
+NOCHE  chelsea_giro               1 toma  26.2 dB · v1  32.4 dB · v2  35.1 dB   (v2 vs v1 +2.7 dB)
+NOCHE  coffee_giro_fantasma       1 toma  24.7 dB · v1  28.7 dB · v2  30.9 dB   (v2 vs v1 +2.1 dB)
 BRILLO  la exposición baja 30% sin movimiento → movimiento medido 0.001 anchos/s (debe ser ≈ 0)
 === FUSIÓN TEMPORAL DE ESCENAS (lecturas de IA con ruido real) ===
 mascota con 25% de lecturas vacías y 15% confundidas con comida: aciertos 56/56 (tras 1.3 s), cambios de escena: 1
@@ -83,52 +94,3 @@ FLUJO  persona caminando          global: medido 0.004 / real 0.000 anchos/s   s
 FLUJO  mascota corriendo + paneo  global: medido 0.072 / real 0.075 anchos/s   sujeto: medido 0.553 / real 0.559
 ORIENTACIÓN  80/80 puntos devueltos exactamente al marco vertical (0°, 90°, 180°, 270°)
 ROSTRO  ancla en los ojos (0.495, 0.240); zona de medición [0.45,0.2625][0.54,0.351] dentro de la cara: true
-=== HDR EN FOTOS REALES (cielo/zonas claras 5× más luminosas) ===
-playa_tf.jpg           quemado  74.9% →  41.3%   alineación (0,0)   relación medida 4.00 (real 4.00)
-caballos.jpg           quemado   6.9% →   0.1%   alineación (0,0)   relación medida 4.00 (real 4.00)
-persona_campo.jpg      quemado  34.7% →   1.8%   alineación (0,0)   relación medida 4.00 (real 4.00)
-casa.jpg               quemado   8.2% →   0.0%   alineación (0,0)   relación medida 4.00 (real 4.00)
-jirafas_sabana.jpg     quemado   5.5% →   0.4%   alineación (0,0)   relación medida 4.00 (real 4.00)
-=== HORIZONTE EN FOTOS REALES ===
-aguila.jpg             sin horizonte
-autobus_calle.jpg      y=0.30   +3.9°  confianza 0.26 (descartado)
-caballos.jpg           y=0.40   -3.3°  confianza 1.00
-casa.jpg               y=0.70   -1.7°  confianza 0.23 (descartado)
-edificio.jpg           y=0.62   -3.1°  confianza 0.15 (descartado)
-frutas.jpg             y=0.63   +2.9°  confianza 0.15 (descartado)
-futbol.jpg             y=0.72   +4.6°  confianza 0.15 (descartado)
-jirafas_sabana.jpg     y=0.45   -2.0°  confianza 0.23 (descartado)
-mariposa.jpg           y=0.55   -3.2°  confianza 0.15 (descartado)
-perro1.jpg             sin horizonte
-perro2.jpg             y=0.33   -1.4°  confianza 0.75
-perro_bici.jpg         y=0.40   -1.9°  confianza 0.19 (descartado)
-perros_tf.jpg          sin horizonte
-persona_campo.jpg      y=0.26   -6.1°  confianza 0.88
-personas_zidane.jpg    y=0.63   +1.4°  confianza 0.15 (descartado)
-playa_tf.jpg           y=0.46   +1.6°  confianza 0.88
-quokka.jpg             sin horizonte
-retrato_grace.jpg      sin horizonte
-=== MACRO+ EN FOTOS REALES (5 enfoques) ===
-mariposa.jpg           mejor toma sola  22.6 dB → apilado  38.1 dB  (+15.5 dB)
-frutas.jpg             mejor toma sola  30.3 dB → apilado  58.0 dB  (+27.7 dB)
-quokka.jpg             mejor toma sola  31.8 dB → apilado  50.0 dB  (+18.2 dB)
-=== MODO NOCHE EN FOTOS REALES (8 tomas, pulso ±10 px, ruido de sensor) ===
-aguila.jpg             1 toma  24.9 dB → 8 tomas  33.1 dB  (+8.2 dB)
-autobus_calle.jpg      1 toma  25.5 dB → 8 tomas  33.1 dB  (+7.6 dB)
-caballos.jpg           1 toma  26.7 dB → 8 tomas  35.3 dB  (+8.6 dB)
-casa.jpg               1 toma  25.9 dB → 8 tomas  33.8 dB  (+7.9 dB)
-edificio.jpg           1 toma  26.0 dB → 8 tomas  34.0 dB  (+8.0 dB)
-frutas.jpg             1 toma  24.8 dB → 8 tomas  32.5 dB  (+7.7 dB)
-futbol.jpg             1 toma  24.5 dB → 8 tomas  32.5 dB  (+8.0 dB)
-jirafas_sabana.jpg     1 toma  24.4 dB → 8 tomas  30.7 dB  (+6.3 dB)
-mariposa.jpg           1 toma  24.9 dB → 8 tomas  32.3 dB  (+7.3 dB)
-perro1.jpg             1 toma  26.7 dB → 8 tomas  35.2 dB  (+8.5 dB)
-perro2.jpg             1 toma  26.3 dB → 8 tomas  34.7 dB  (+8.5 dB)
-perro_bici.jpg         1 toma  26.3 dB → 8 tomas  34.7 dB  (+8.4 dB)
-perros_tf.jpg          1 toma  25.1 dB → 8 tomas  33.2 dB  (+8.1 dB)
-persona_campo.jpg      1 toma  27.2 dB → 8 tomas  35.5 dB  (+8.3 dB)
-personas_zidane.jpg    1 toma  23.8 dB → 8 tomas  30.2 dB  (+6.4 dB)
-playa_tf.jpg           1 toma  27.9 dB → 8 tomas  36.5 dB  (+8.6 dB)
-quokka.jpg             1 toma  25.5 dB → 8 tomas  33.8 dB  (+8.3 dB)
-retrato_grace.jpg      1 toma  24.5 dB → 8 tomas  32.6 dB  (+8.0 dB)
-peor mejora: +6.3 dB

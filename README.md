@@ -57,6 +57,7 @@ Paleta negro tinta con paneles de vidrio. El ámbar marca la acción y los valor
 2. ✅ IA en el teléfono (ML Kit): reconocer escena y sujeto, entrenador de composición
 3. ✅ "Cerebro fotógrafo": decisiones automáticas de velocidad, exposición, blancos y lente
 4. ✅ RAW, apilado multi‑toma (noche), macro con *focus stacking*
+5. ✅ Base de fotografía computacional: alineación v2 (por zonas, giro y subpíxel), mezcla robusta y memoria de fotogramas
 
 ## Desarrollo
 

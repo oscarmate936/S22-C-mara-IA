@@ -262,6 +262,11 @@ class CameraEngine(private val context: Context) {
     /** Exposición manual temporal (ISO, velocidad) para la toma oscura del HDR. */
     private var burstExposure: Pair<Int, Long>? = null
     private var frameAnalyzer: FrameAnalyzer? = null
+    /** Memoria de los últimos fotogramas del visor (para la ráfaga inteligente). */
+    val frameRing = FrameRing(RING_FRAMES)
+    /** Memoria de fotogramas activa: el análisis pasa a alta resolución (más batería). */
+    var frameRingEnabled: Boolean = false
+        set(v) { if (field != v) { field = v; frameRing.clear(); rebind() } }
     private var analysisUseCase: ImageAnalysis? = null
     /** Rotación que endereza los fotogramas en el marco vertical de la pantalla. */
     @Volatile private var portraitRotation = 90
@@ -470,7 +475,10 @@ class CameraEngine(private val context: Context) {
                 ResolutionSelector.Builder()
                     .setAspectRatioStrategy(ratio)
                     .setResolutionStrategy(
-                        ResolutionStrategy(Size(640, 480), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER),
+                        ResolutionStrategy(
+                            if (frameRingEnabled) Size(1920, 1440) else Size(640, 480),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
+                        ),
                     )
                     .build(),
             )
@@ -479,6 +487,7 @@ class CameraEngine(private val context: Context) {
             onStats = { s -> mainHandler.post { onFrameStats(s) } },
             handOff = { img -> handToAi(img) },
         )
+        fa.ring = if (frameRingEnabled) frameRing else null
         frameAnalyzer = fa
         analysisUseCase = analysis
         analysis.targetRotation = targetRotation
@@ -1286,6 +1295,8 @@ class CameraEngine(private val context: Context) {
     }
 
     companion object {
+        /** Fotogramas que guarda la memoria (~0.5 s a 15–30 fps). */
+        const val RING_FRAMES = 10
         private const val TAG = "IACamara"
     }
 }

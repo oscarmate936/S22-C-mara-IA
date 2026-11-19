@@ -3,6 +3,8 @@ package com.iacamara.app
 import com.iacamara.app.processing.Align
 import com.iacamara.app.processing.FocusStacker
 import com.iacamara.app.processing.MeanStacker
+import com.iacamara.app.processing.RobustMerger
+import com.iacamara.app.processing.TileAlign
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -322,5 +324,79 @@ class SimulationTest {
         line("ALINEACIÓN  aciertos (error ≤ 1 px): $ok/$total")
         flush("reporte_alineacion.txt")
         assertTrue(ok >= total * 0.9)
+    }
+
+    // ------------------------------------------------------------------ 4. Alineación v2
+
+    @Test fun alineacionV2DetectaGiroYEscala() {
+        line("=== ALINEACIÓN v2: desplazamiento + giro + escala ===")
+        var worst = 0f
+        for ((photo, deg) in listOf("astronaut.png" to 0.5, "coffee.png" to -0.35, "rocket.jpg" to 0.2, "chelsea.png" to 0.0)) {
+            val gt = load(photo)
+            val rnd = Random(photo.hashCode())
+            val dx = rnd.nextDouble(-9.0, 9.0); val dy = rnd.nextDouble(-9.0, 9.0)
+            val ref = Align.luma(sensorNoise(gt, 400.0, rnd).px)
+            val cur = Align.luma(sensorNoise(warp(gt, dx, dy, deg), 400.0, rnd).px)
+            val res = TileAlign.estimate(ref, cur, gt.w, gt.h)
+            // Error en las esquinas: dónde dice la alineación que está cada esquina vs. dónde está.
+            val a = Math.toRadians(deg); val cx = gt.w / 2.0; val cy = gt.h / 2.0
+            var err = 0.0
+            for ((x, y) in listOf(0.0 to 0.0, gt.w - 1.0 to 0.0, 0.0 to gt.h - 1.0, gt.w - 1.0 to gt.h - 1.0)) {
+                // En la toma, el punto de la escena (x,y) aparece girado y desplazado.
+                val rx = x - cx; val ry = y - cy
+                val tx = cos(a) * rx - sin(a) * ry + cx + dx
+                val ty = sin(a) * rx + cos(a) * ry + cy + dy
+                val ex = res.transform.mapX(x.toFloat(), y.toFloat()) - tx
+                val ey = res.transform.mapY(x.toFloat(), y.toFloat()) - ty
+                err = max(err, sqrt(ex * ex + ey * ey))
+            }
+            worst = max(worst, err.toFloat())
+            line("%-16s giro real %+.2f° → medido %+.2f°   error en las esquinas %.2f px   (%d zonas)".format(photo, deg, res.transform.rotationDeg, err, res.tilesUsed))
+        }
+        flush("reporte_alineacion_v2.txt")
+        assertTrue("precisión subpíxel en todo el encuadre ($worst px)", worst < 1.0f)
+    }
+
+    private fun nightCompare(photo: String, rotationDeg: Double, ghost: Boolean, seed: Int) {
+        val gt = load(photo)
+        val rnd = Random(seed)
+        val frames = (0 until 8).map { k ->
+            val dx = if (k == 0) 0.0 else rnd.nextDouble(-10.0, 10.0)
+            val dy = if (k == 0) 0.0 else rnd.nextDouble(-10.0, 10.0)
+            val rot = if (k == 0 || rotationDeg == 0.0) 0.0 else rnd.nextDouble(-rotationDeg, rotationDeg)
+            var f = warp(gt, dx, dy, rot)
+            if (ghost && k in 3..5) {
+                val ox = gt.w / 4 + k * gt.w / 10
+                for (y in gt.h / 3 until gt.h / 3 + gt.h / 6) for (x in ox until min(gt.w, ox + gt.w / 8)) f.px[y * gt.w + x] = rgb(235, 225, 210)
+            }
+            sensorNoise(f, 150.0, rnd)
+        }
+        // v1 (versión actual)
+        val ref = Align.luma(frames[0].px)
+        val s1 = MeanStacker(gt.w, gt.h).apply { add(frames[0].px) }
+        for (k in 1 until 8) { val (sx, sy) = Align.estimateShift(ref, Align.luma(frames[k].px), gt.w, gt.h); s1.add(frames[k].px, sx, sy) }
+        val v1 = Img(gt.w, gt.h, s1.result(0f))
+        // v2
+        val s2 = RobustMerger(gt.w, gt.h, 8).apply { add(frames[0].px) }
+        for (k in 1 until 8) {
+            val t = TileAlign.estimate(ref, Align.luma(frames[k].px), gt.w, gt.h).transform
+            s2.add(TileAlign.warp(frames[k].px, gt.w, gt.h, t))
+        }
+        val v2 = Img(gt.w, gt.h, s2.result(0f))
+        val p0 = psnr(frames[0], gt); val p1 = psnr(v1, gt); val p2 = psnr(v2, gt)
+        val tag = photo.substringBefore('.') + (if (rotationDeg > 0) "_giro" else "") + (if (ghost) "_fantasma" else "")
+        save(v1, "noche_v1_$tag.png"); save(v2, "noche_v2_$tag.png")
+        line("NOCHE  %-26s 1 toma %5.1f dB · v1 %5.1f dB · v2 %5.1f dB   (v2 vs v1 %+.1f dB)".format(tag, p0, p1, p2, p2 - p1))
+        assertTrue("$tag: v2 no debe empeorar", p2 >= p1 - 0.2)
+    }
+
+    @Test fun modoNocheV2VsV1() {
+        line("=== MODO NOCHE v2 vs v1 (8 tomas, pulso ±10 px subpíxel) ===")
+        nightCompare("astronaut.png", 0.0, false, 31)
+        nightCompare("astronaut.png", 0.5, false, 32)
+        nightCompare("rocket.jpg", 0.5, false, 33)
+        nightCompare("chelsea.png", 0.4, false, 34)
+        nightCompare("coffee.png", 0.3, true, 35)
+        flush("reporte_noche_v2.txt")
     }
 }

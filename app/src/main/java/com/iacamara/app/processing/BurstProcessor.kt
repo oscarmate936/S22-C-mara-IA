@@ -60,35 +60,37 @@ class BurstProcessor(private val context: Context) {
         first.recycle()
         val refLuma = Align.luma(buf)
 
-        val mean = if (kind == BurstKind.NIGHT || kind == BurstKind.HDR) MeanStacker(w, h) else null
+        // En HDR la última toma es la oscura: se procesa aparte.
+        val normalCount = if (kind == BurstKind.HDR && frames.size >= 2) frames.size - 1 else frames.size
+        // Alineación v2 (zonas, giro, subpíxel) + mezcla robusta.
+        val merger = if (kind == BurstKind.NIGHT || kind == BurstKind.HDR) RobustMerger(w, h, normalCount) else null
         val focus = if (kind == BurstKind.MACRO) FocusStacker(w, h) else null
-        mean?.add(buf)
+        merger?.add(buf)
         focus?.add(buf)
         onProgress(1, frames.size)
 
-        // En HDR la última toma es la oscura: se procesa aparte.
-        val normalCount = if (kind == BurstKind.HDR && frames.size >= 2) frames.size - 1 else frames.size
         for (k in 1 until normalCount) {
             val bmp = BitmapFactory.decodeByteArray(frames[k], 0, frames[k].size, opts) ?: continue
             if (bmp.width != w || bmp.height != h) { bmp.recycle(); continue }
             bmp.getPixels(buf, 0, w, 0, 0, w, h)
             bmp.recycle()
-            val (dx, dy) = Align.estimateShift(refLuma, Align.luma(buf), w, h)
-            mean?.add(buf, dx, dy)
-            focus?.add(buf, dx, dy)
+            val t = TileAlign.estimate(refLuma, Align.luma(buf), w, h).transform
+            val aligned = TileAlign.warp(buf, w, h, t)
+            merger?.add(aligned)
+            focus?.add(aligned)
             onProgress(k + 1, frames.size)
         }
 
-        var out = mean?.result(shadowLift) ?: focus!!.result()
-        var used = mean?.count ?: focus!!.count
+        var out = merger?.result(shadowLift) ?: focus!!.result()
+        var used = merger?.count ?: focus!!.count
         if (kind == BurstKind.HDR && frames.size >= 2) {
             val last = frames.last()
             val under = BitmapFactory.decodeByteArray(last, 0, last.size, opts)
             if (under != null && under.width == w && under.height == h) {
                 under.getPixels(buf, 0, w, 0, 0, w, h)
                 under.recycle()
-                val (dx, dy) = Align.estimateShift(refLuma, Align.lumaWithGain(buf, hdrRatio), w, h)
-                out = HdrMerger(w, h).merge(out, buf, dx, dy, hdrRatio)
+                val t = TileAlign.estimate(refLuma, Align.lumaWithGain(buf, hdrRatio), w, h).transform
+                out = HdrMerger(w, h).merge(out, TileAlign.warp(buf, w, h, t), 0, 0, hdrRatio)
                 used++
             }
             onProgress(frames.size, frames.size)

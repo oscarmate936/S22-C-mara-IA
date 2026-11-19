@@ -21,4 +21,5 @@ Fotos de prueba (dominio público / CC0, de scikit-image): astronauta (NASA), ga
 | `cmp_ia_contraluz.png` | Contraluz: cámara sola · IA v2 (cara bien expuesta) · IA v2 + HDR (ventana recuperada) |
 | `cmp_ia_nieve.png` | Nieve: cámara sola (gris) vs. IA v2 (blanca, sin quemar) |
 | `cmp_amanecer.png` | Amanecer: antes (resplandor quemado) vs. ahora con HDR (color recuperado, misma silueta) |
+| `cmp_noche_v1_v2.png` | Modo noche con giro de la mano: v1 (izq.) vs. v2 con alineación por zonas (der.) |
 | `reporte.txt` | Métricas (PSNR, alineación, fotómetro, escenas) |

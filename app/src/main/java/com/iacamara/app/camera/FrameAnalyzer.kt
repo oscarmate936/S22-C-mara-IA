@@ -73,10 +73,15 @@ class FrameAnalyzer(
     private var prevW = 0
     private var prevH = 0
     private var prevTime = 0L
+    /** Factor de reducción usado en el último flujo óptico. */
+    private var motionDs = DS
     /** Última imagen reducida (también sirve para buscar el horizonte). */
     private var lastSmall: ByteArray? = null
     private var lastSmallW = 0
     private var lastSmallH = 0
+
+    /** Memoria de fotogramas (si está activa, cada fotograma se guarda antes de analizarlo). */
+    @Volatile var ring: FrameRing? = null
 
     /** Zona del sujeto a medir (la fija el motor con lo que detecta la IA). */
     @Volatile var region: NormRect? = null
@@ -84,6 +89,10 @@ class FrameAnalyzer(
     @Volatile var regionMirrored: Boolean = false
 
     override fun analyze(image: ImageProxy) {
+        ring?.let { r ->
+            val ts = runCatching { image.imageInfo.timestamp }.getOrNull() ?: clock()
+            r.push(image, rotationOf(image), ts)
+        }
         val now = System.currentTimeMillis()
         if (minIntervalMs <= 0 || now - lastEmit >= minIntervalMs) {
             lastEmit = now
@@ -268,17 +277,22 @@ class FrameAnalyzer(
         val buf = plane.buffer
         val w = image.width
         val h = image.height
-        val sw = w / DS
-        val sh = h / DS
+        // Reducción adaptativa: con análisis en alta resolución (memoria de fotogramas) la
+        // imagen pequeña sigue teniendo ~160 px de ancho, así el costo no sube.
+        val ds = maxOf(DS, (minOf(w, h) / 120) and 1.inv())
+        val sw = w / ds
+        val sh = h / ds
         if (sw < 32 || sh < 32) { lastSmall = null; return 0f to null }
         val small = ByteArray(sw * sh)
+        val half = ds / 2
         for (y in 0 until sh) for (x in 0 until sw) {
             var s = 0
-            for (oy in 0 until DS step 2) for (ox in 0 until DS step 2) {
-                s += buf.get((y * DS + oy) * plane.rowStride + (x * DS + ox) * plane.pixelStride).toInt() and 0xFF
+            for (oy in 0 until ds step half) for (ox in 0 until ds step half) {
+                s += buf.get((y * ds + oy) * plane.rowStride + (x * ds + ox) * plane.pixelStride).toInt() and 0xFF
             }
-            small[y * sw + x] = (s / ((DS / 2) * (DS / 2))).toByte()
+            small[y * sw + x] = (s / 4).toByte()
         }
+        motionDs = ds
         val t = runCatching { image.imageInfo.timestamp }.getOrNull()?.takeIf { it > 0 } ?: clock()
         val prev = prevSmall
         val dtS = (t - prevTime) / 1e9f
@@ -291,9 +305,9 @@ class FrameAnalyzer(
         // Zona del sujeto en la imagen reducida (se excluye del cálculo global).
         val subj = region?.let { r ->
             val rb = regionToBuffer(r, rotationOf(image), w, h)
-            val x0 = (rb[0] / DS).coerceIn(m, sw - m - 1)
-            val y0 = (rb[1] / DS).coerceIn(m, sh - m - 1)
-            intArrayOf(x0, y0, (rb[2] / DS).coerceIn(x0 + 1, sw - m), (rb[3] / DS).coerceIn(y0 + 1, sh - m))
+            val x0 = (rb[0] / motionDs).coerceIn(m, sw - m - 1)
+            val y0 = (rb[1] / motionDs).coerceIn(m, sh - m - 1)
+            intArrayOf(x0, y0, (rb[2] / motionDs).coerceIn(x0 + 1, sw - m), (rb[3] / motionDs).coerceIn(y0 + 1, sh - m))
         }
         // Global: toda la imagen salvo el margen y el sujeto (el sujeto no debe "arrastrar" la medida).
         val g = flow(prev, small, sw, m, m, sw - m, sh - m, subj)

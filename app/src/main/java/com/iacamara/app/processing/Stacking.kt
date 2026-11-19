@@ -222,7 +222,7 @@ class FocusStacker(private val w: Int, private val h: Int) {
             for (x in 0 until w) {
                 val sx = x + dx
                 val i = y * w + x
-                val inside = sx in 0 until w && sy in 0 until h
+                val inside = sx in 0 until w && sy in 0 until h && (px[sy * w + sx] ushr 24) != 0
                 if (first) {
                     out[i] = if (inside) px[sy * w + sx] else px[i]
                     continue
@@ -312,7 +312,7 @@ class HdrMerger(private val w: Int, private val h: Int) {
                 var b = toLin[p and 0xFF]
                 val sx = x + dx
                 val m = mask[i]
-                if (m > 0f && sx in 0 until w && sy in 0 until h) {
+                if (m > 0f && sx in 0 until w && sy in 0 until h && (under[sy * w + sx] ushr 24) != 0) {
                     val q = under[sy * w + sx]
                     r = r * (1 - m) + toLin[(q shr 16) and 0xFF] * ratio * m
                     g = g * (1 - m) + toLin[(q shr 8) and 0xFF] * ratio * m
@@ -362,7 +362,7 @@ class HdrMerger(private val w: Int, private val h: Int) {
             if (sx in 0 until w && sy in 0 until h) {
                 val p = normal[i]
                 val mx = max(max((p shr 16) and 0xFF, (p shr 8) and 0xFF), p and 0xFF)
-                if (mx in 60..200) {
+                if (mx in 60..200 && (under[sy * w + sx] ushr 24) != 0) {
                     val q = under[sy * w + sx]
                     val ln = 0.2126f * toLin[(p shr 16) and 0xFF] + 0.7152f * toLin[(p shr 8) and 0xFF] + 0.0722f * toLin[p and 0xFF]
                     val lu = 0.2126f * toLin[(q shr 16) and 0xFF] + 0.7152f * toLin[(q shr 8) and 0xFF] + 0.0722f * toLin[q and 0xFF]
