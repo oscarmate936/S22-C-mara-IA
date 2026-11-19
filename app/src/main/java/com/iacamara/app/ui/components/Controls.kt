@@ -332,17 +332,10 @@ private fun ReadoutCell(item: ReadoutItem, modifier: Modifier) {
             .padding(vertical = 6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(item.label, style = Type.Label.copy(fontSize = 9.sp), color = if (item.selected) Palette.Amber else Palette.Mist)
             AnimatedVisibility(item.auto && item.enabled && item.onClick != null) {
-                Box(
-                    Modifier
-                        .padding(start = 3.dp)
-                        .background(Palette.Cyan.copy(alpha = 0.18f), RoundedCornerShape(3.dp))
-                        .padding(horizontal = 3.dp),
-                ) {
-                    Text("A", style = Type.Label.copy(fontSize = 8.sp, letterSpacing = 0.sp), color = Palette.Cyan)
-                }
+                Box(Modifier.padding(end = 4.dp).size(4.dp).background(Palette.Cyan, CircleShape))
             }
+            Text(item.label, style = Type.Label.copy(fontSize = 9.sp), color = if (item.selected) Palette.Amber else Palette.Mist, maxLines = 1, softWrap = false)
         }
         Spacer(Modifier.height(3.dp))
         Text(item.value, style = Type.Readout, color = valueColor, maxLines = 1, softWrap = false)

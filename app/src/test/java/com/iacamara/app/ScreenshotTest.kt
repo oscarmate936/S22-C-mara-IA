@@ -1,10 +1,8 @@
 package com.iacamara.app
 
 import android.graphics.Bitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onRoot
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
 import com.iacamara.app.camera.CameraEngine
 import com.iacamara.app.sensors.DeviceSensors
@@ -24,23 +22,25 @@ import java.io.File
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-420dpi")
 class ScreenshotTest {
-    @get:Rule val rule = createComposeRule()
+    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     private fun save(name: String) {
-        val bmp = rule.onRoot().captureToImage().asAndroidBitmap()
+        val view = rule.activity.window.decorView
+        val bmp = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        rule.runOnUiThread { view.draw(android.graphics.Canvas(bmp)) }
         val dir = File("build/screenshots").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     @Test fun permission() {
-        rule.setContent { IACamaraTheme { PermissionScreen(false) {} } }
+        rule.activity.actionBar?.hide(); rule.setContent { IACamaraTheme { PermissionScreen(false) {} } }
         rule.waitForIdle(); save("1_bienvenida")
     }
 
     private fun camera(pro: Boolean, name: String) {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
         val engine = CameraEngine(ctx)
-        rule.setContent { IACamaraTheme { CameraScreen(engine, Prefs(ctx), DeviceSensors(ctx)) {} } }
+        rule.activity.actionBar?.hide(); rule.setContent { IACamaraTheme { CameraScreen(engine, Prefs(ctx), DeviceSensors(ctx)) {} } }
         rule.waitForIdle()
         rule.runOnIdle { engine.loadDemoState(pro) }
         rule.mainClock.advanceTimeBy(1500)

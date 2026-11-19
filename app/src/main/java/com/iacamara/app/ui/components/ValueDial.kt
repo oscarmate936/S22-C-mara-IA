@@ -32,11 +32,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
@@ -112,15 +108,14 @@ fun ValueDial(
                 .fillMaxWidth()
                 .height(58.dp)
                 // Desvanecer los bordes para que la regla "salga" del panel.
-                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                 .drawWithContent {
                     drawContent()
+                    val edge = Palette.Graphite
                     drawRect(
                         Brush.horizontalGradient(
-                            0f to Color.Transparent, 0.18f to Color.Black,
-                            0.82f to Color.Black, 1f to Color.Transparent,
+                            0f to edge, 0.16f to edge.copy(alpha = 0f),
+                            0.84f to edge.copy(alpha = 0f), 1f to edge,
                         ),
-                        blendMode = BlendMode.DstIn,
                     )
                 },
         ) {

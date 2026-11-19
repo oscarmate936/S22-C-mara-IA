@@ -1,0 +1,45 @@
+name: Compilar APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilar APK
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Renombrar APK
+        run: cp app/build/outputs/apk/release/app-release.apk IA-Camara.apk
+
+      - name: Guardar como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: IA-Camara
+          path: IA-Camara.apk
+
+      - name: Publicar como "Última versión"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ultima-version
+          name: IA Cámara — última versión
+          prerelease: true
+          make_latest: false
+          body: |
+            APK compilado automáticamente desde la rama `${{ github.ref_name }}` (commit ${{ github.sha }}).
+            Descarga **IA-Camara.apk** desde tu teléfono e instálalo.
+          files: IA-Camara.apk

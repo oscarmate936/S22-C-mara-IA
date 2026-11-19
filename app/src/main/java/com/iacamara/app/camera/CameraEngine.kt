@@ -71,7 +71,7 @@ data class Lens(
     val equivalentMm: Int,
 ) {
     val factor: Float get() = baseFactor * zoom
-    val label: String get() = formatFactor(factor)
+    val label: String get() = if (factor >= 1.5f) "${factor.roundToInt()}" else formatFactor(factor)
 }
 
 fun formatFactor(f: Float): String {

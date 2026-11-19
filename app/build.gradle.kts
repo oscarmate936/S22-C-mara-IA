@@ -71,5 +71,11 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     systemProperty("robolectric.dependency.repo.url", "https://repo1.maven.org/maven2")
+    // Si el runtime de Robolectric ya está descargado localmente, úsalo sin red.
+    val localJars = file("/opt/robolectric-jars")
+    if (localJars.isDirectory) {
+        systemProperty("robolectric.offline", "true")
+        systemProperty("robolectric.dependency.dir", localJars.absolutePath)
+    }
     maxHeapSize = "3g"
 }
