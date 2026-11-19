@@ -185,8 +185,9 @@ class Phase9Test {
         line("NOTA    paisaje recto: ${d(sRocket)} · torcido 5°: ${d(sTilt)}")
         line("NOTA    ojos cerrados: ${d(closed)}")
         assertTrue(sGood.score >= 80)
-        assertTrue(sBlur.score <= sGood.score - 20)
-        assertTrue(sNoisy.score < sGood.score - 5)
+        // Pesos calibrados con KonIQ-10k (nota humana): lo movido resta mucho; el ruido, poco (pero se avisa).
+        assertTrue(sBlur.score <= sGood.score - 12)
+        assertTrue(sNoisy.tips.any { it.name == "Ruido" })
         assertTrue(sDark.score < sGood.score - 8)
         assertTrue(sBurnt.score < sGood.score - 8)
         assertTrue(sTilt.score < sRocket.score && sTilt.tips.any { it.name == "Horizonte" })

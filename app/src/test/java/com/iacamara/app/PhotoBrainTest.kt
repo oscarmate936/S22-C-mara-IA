@@ -30,12 +30,13 @@ class PhotoBrainTest {
         shadowArea: Float = 0f,
         snowy: Boolean = false,
         p98: Float = 0.62f,
+        zoom: Float = 1f,
     ) = BrainInput(
         scene = scene, subject = null, subjectSpeed = speed, gyro = gyro, steady = steady,
         equivalentMm = mm, meanLuma = luma, clippedHighlights = clipped, liveIso = iso,
         aeShutterNs = aeShutterNs, isoMin = 50, isoMax = 3200, priorityIso = priorityIso,
         shutterValues = shutters,
-        clippedArea = clippedArea, shadowArea = shadowArea, snowy = snowy, p98 = p98,
+        clippedArea = clippedArea, shadowArea = shadowArea, snowy = snowy, p98 = p98, zoomFactor = zoom,
     )
 
     @Test fun mascotaCongelaMovimiento() {
@@ -50,10 +51,15 @@ class PhotoBrainTest {
     }
 
     @Test fun teleobjetivoAPulsoExigeMasVelocidad() {
-        // 69 mm a pulso con la cámara eligiendo 1/30: regla de pulso → al menos 1/138 → 1/160.
-        val d = PhotoBrain().decide(input(Scene.GENERAL, aeShutterNs = 1_000_000_000L / 30, mm = 69f), engaged = null)
+        // Tele del S22+ (69 mm, con estabilizador óptico ≈ 2 pasos) a pulso con la cámara eligiendo 1/15:
+        // regla 1/(2·69) relajada por el OIS → al menos ~1/35.
+        val d = PhotoBrain().decide(input(Scene.GENERAL, aeShutterNs = 1_000_000_000L / 15, mm = 69f, zoom = 2.9f), engaged = null)
         assertNotNull(d.shutterNs)
-        assertTrue(d.shutterNs!! <= 1_000_000_000L / 138)
+        assertTrue(d.shutterNs!! <= 1_000_000_000L / 34)
+        // Ultra gran angular (sin OIS) a 13 mm: 1/26 basta; con la cámara en 1/15 también interviene.
+        val u = PhotoBrain().decide(input(Scene.GENERAL, aeShutterNs = 1_000_000_000L / 15, mm = 13f, zoom = 0.55f), engaged = null)
+        assertNotNull(u.shutterNs)
+        assertTrue(u.shutterNs!! <= 1_000_000_000L / 25)
     }
 
     @Test fun atardecerBajaExposicionYMantieneDorado() {

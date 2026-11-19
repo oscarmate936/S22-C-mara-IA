@@ -33,26 +33,34 @@ object PhotoScore {
         val tips get() = factors.filter { !it.ok }.sortedByDescending { it.penalty }
     }
 
-    fun score(m: PhotoMetrics): Result {
+    /**
+     * Pesos calibrados con KonIQ-10k (3 000 fotos para ajustar, 1 000 para medir): la correlación de
+     * orden con la nota humana pasó de 0.29 a 0.49. Ruido, quemado y horizonte casi no influyen en
+     * la nota de las personas en esa colección, pero se conservan con poco peso porque son fallos
+     * reales sobre los que conviene avisar.
+     * @param scene escena con la que se tomó: de noche o al atardecer, una foto oscura es correcta.
+     */
+    fun score(m: PhotoMetrics, scene: String? = null): Result {
         val f = ArrayList<Factor>()
         // Nitidez
-        val sharpPen = (((0.38f - m.sharpness) / 0.20f).coerceIn(0f, 1f) * 35).toInt()
+        val sharpPen = (((0.433f - m.sharpness) / 0.3075f).coerceIn(0f, 1f) * 24.8f).toInt()
         f += Factor(
             "Nitidez", sharpPen < 5,
             when {
                 sharpPen < 5 -> "Nítida"
-                sharpPen < 18 -> "Algo blanda: apoya el teléfono o usa una velocidad más rápida"
+                sharpPen < 12 -> "Algo blanda: apoya el teléfono o usa una velocidad más rápida"
                 else -> "Movida o desenfocada: toca el sujeto para enfocar y sujeta firme"
             }, sharpPen,
         )
         // Exposición
-        val clipPen = ((m.clipped - 0.03f) / 0.22f).coerceIn(0f, 1f) * 20
-        val crushPen = ((m.crushed - 0.10f) / 0.30f).coerceIn(0f, 1f) * 12
+        val clipPen = ((m.clipped - 0.08f) / 0.25f).coerceIn(0f, 1f) * 8
+        val crushPen = ((m.crushed - 0.20f) / 0.30f).coerceIn(0f, 1f) * 5
+        val darkOk = scene == "NIGHT" || scene == "SUNSET"
         val meanPen = when {
-            m.meanLuma < 0.18f -> (0.18f - m.meanLuma) / 0.12f * 18
-            m.meanLuma > 0.78f -> (m.meanLuma - 0.78f) / 0.15f * 12
+            m.meanLuma < 0.322f -> ((0.322f - m.meanLuma) / 0.369f).coerceIn(0f, 1f) * 31.1f * (if (darkOk) 0.3f else 1f)
+            m.meanLuma > 0.793f -> ((m.meanLuma - 0.793f) / 0.0604f).coerceIn(0f, 1f) * 13.8f
             else -> 0f
-        }.coerceIn(0f, 18f)
+        }
         val expPen = (clipPen + crushPen + meanPen).toInt().coerceAtMost(30)
         f += Factor(
             "Exposición", expPen < 5,
@@ -60,17 +68,17 @@ object PhotoScore {
                 expPen < 5 -> "Bien expuesta"
                 clipPen >= crushPen && clipPen >= meanPen -> "Zonas quemadas: baja la exposición o usa HDR"
                 crushPen >= meanPen -> "Sombras sin detalle: usa HDR o aclara en «Mejorar»"
-                m.meanLuma < 0.18f -> "Oscura: aclara en «Mejorar» o usa el modo noche"
+                m.meanLuma < 0.322f -> "Oscura: aclara en «Mejorar» o usa el modo noche"
                 else -> "Muy clara: baja la exposición"
             }, expPen,
         )
         // Ruido
-        val noisePen = ((m.noise - 3f) / 7f).coerceIn(0f, 1f).let { (it * 15).toInt() }
-        f += Factor("Ruido", noisePen < 4, if (noisePen < 4) "Limpia" else "Con grano: con poca luz usa el modo noche (combina tomas)", noisePen)
+        val noisePen = ((m.noise - 8f) / 10f).coerceIn(0f, 1f).let { (it * 6).toInt() }
+        f += Factor("Ruido", m.noise < 8f, if (m.noise < 8f) "Limpia" else "Con grano: con poca luz usa el modo noche (combina tomas)", noisePen)
         // Horizonte
         m.tiltDeg?.let { t ->
-            val tiltPen = ((abs(t) - 0.8f) / 3.2f).coerceIn(0f, 1f).let { (it * 10).toInt() }
-            f += Factor("Horizonte", tiltPen < 2, if (tiltPen < 2) "Recto" else "Torcido %.1f°: usa «Enderezar»".format(abs(t)), tiltPen)
+            val tiltPen = ((abs(t) - 0.8f) / 3.2f).coerceIn(0f, 1f).let { (it * 5).toInt() }
+            f += Factor("Horizonte", abs(t) < 1.5f, if (abs(t) < 1.5f) "Recto" else "Torcido %.1f°: usa «Enderezar»".format(abs(t)), tiltPen)
         }
         // Personas
         if (m.faces.isNotEmpty()) {

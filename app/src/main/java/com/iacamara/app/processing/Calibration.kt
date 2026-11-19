@@ -7,7 +7,15 @@ package com.iacamara.app.processing
  *  • ADE20K: cielo y vegetación marcados a mano (máscaras de las zonas).
  */
 object Calibration {
-    val MASKS = ZoneMasks.Tuning()
+    /**
+     * Máscaras de zonas (ADE20K, 400 fotos de prueba no usadas para ajustar): cielo IoU 0.34 → 0.63,
+     * vegetación 0.37 → 0.40. Los cielos cálidos quedan fuera de la máscara de cielo: así el retoque de
+     * cielo nunca satura un atardecer (con la regla de cielo cálido el acierto general bajaba a 0.56).
+     */
+    val MASKS = ZoneMasks.Tuning(
+        blueRatio = 1.0718f, blueMinL = 0.0834f, duskMinL = 0.0460f, paleMinL = 0.9074f, paleMaxSat = 0.1977f,
+        warmMinL = 1.3796f, skyMaxTexture = 0.02198f, floodStep = 0.1482f, greenRatio = 1.0039f, greenMinSat = 0.1898f,
+    )
 
     /** Exposición por escena (pasos EV), provisional hasta la calibración completa. */
     val SCENE_EV: Map<String, Float> = emptyMap()

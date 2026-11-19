@@ -222,7 +222,7 @@ fun ViewerScreen(
                             val bytes = context.contentResolver.openInputStream(u)?.use { it.readBytes() } ?: return@runCatching null
                             val b = Editor.decodeUpright(bytes, 1024) ?: return@runCatching null
                             val px = IntArray(b.width * b.height).also { b.getPixels(it, 0, b.width, 0, 0, b.width, b.height) }
-                            PhotoScore.score(PhotoScore.measure(px, b.width, b.height, Editor.faces(b)))
+                            PhotoScore.score(PhotoScore.measure(px, b.width, b.height, Editor.faces(b)), com.iacamara.app.ai.TasteStore(context).sceneOf(u.lastPathSegment ?: ""))
                         }.getOrNull()
                     }
                     if (r != null) scores[u] = r
