@@ -113,3 +113,18 @@ LARGA   estela continua en el 100 % del recorrido · agua: textura 16.5 → 4.1 
 ASTRO   horizonte: error 3 px · 9 de 9 tomas alineadas con las estrellas · píxeles calientes eliminados (0 restantes de 30)
 ASTRO   estrellas: brillo 120 (1 toma 121, sumar sin alinear 97 = estelas) · ruido del cielo 4.7 → 1.1
 TIEMPOS 3000×2250: tono local 288 ms · exposición larga (3 tomas) 523 ms · enfoque 160 ms
+=== ENDEREZADO Y PERSPECTIVA ===
+GIRO    original -0.21° · torcida 4° → medida -4.38° (confianza 1.00, 101 verticales) · tras enderezar 0.09°
+PERSP   la foto ya converge (0.00034, tomada hacia arriba) · añadida -0.00045 → medida -0.00058 · tras corregir 0.00000 (verticales paralelas)
+=== RETOQUE POR ZONAS ===
+CIELO   detectado: 82 % arriba, 13 % abajo · color del cielo 0.86 → 0.96 · suelo sin cambios (48 dB)
+PIEL    piel detectada en la cara 72 % · cara oscura aclarada ×1.13 · fondo ×1.00 (solo la cara)
+VERDE   color de la vegetación 60 → 76 · zona gris: cambio 0.0 niveles
+=== CALIFICACIÓN DE LA FOTO ===
+NOTA    nítida: 100 (Excelente)
+NOTA    movida: 71 (Buena) · Movida o desenfocada: toca el sujeto para enfocar y sujeta firme
+NOTA    con ruido: 85 (Excelente) · Con grano: con poca luz usa el modo noche (combina tomas)
+NOTA    oscura: 84 (Buena) · Oscura: aclara en «Mejorar» o usa el modo noche
+NOTA    quemada: 73 (Buena) · Zonas quemadas: baja la exposición o usa HDR
+NOTA    paisaje recto: 100 (Excelente) · torcido 5°: 90 (Excelente) · Torcido 5.5°: usa «Enderezar»
+NOTA    ojos cerrados: 85 (Excelente) · Alguien tiene los ojos cerrados: usa «Acción» (elige la mejor toma)

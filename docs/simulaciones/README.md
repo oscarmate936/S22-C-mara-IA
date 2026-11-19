@@ -28,4 +28,8 @@ Fotos de prueba (dominio público / CC0, de scikit-image): astronauta (NASA), ga
 | `cmp_noche_v2_tono_local.png` | Noche v2: escena oscura con ventana iluminada (izq.) y tono local (der.): sombras +1.8 pasos, ventana sin quemar, sin halo |
 | `cmp_exposicion_larga.png` | Exposición larga: una toma (izq.) vs. 10 tomas (der.): agua de seda y estela del faro continua |
 | `cmp_astro.png` | Astro: una toma (izq.) vs. 10 tomas alineadas a las estrellas (der.): estrellas puntuales, cielo limpio, sin píxeles calientes |
+| `cmp_enderezado.png` | Foto torcida 4° (izq.) y enderezada automáticamente (der.) |
+| `cmp_perspectiva.png` | Verticales convergentes (izq.) corregidas a paralelas (der.) |
+| `cmp_zonas_cielo.png` | Retoque de cielo: más profundo y con color; el suelo no cambia |
+| `cmp_zonas_piel.png` | Retrato oscuro: solo la cara se aclara (el fondo queda igual) |
 | `reporte.txt` | Métricas (PSNR, alineación, fotómetro, escenas) |

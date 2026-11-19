@@ -43,6 +43,9 @@ Cada cambio que se sube al repositorio vuelve a compilar el APK automáticamente
 | **Súper resolución** (fase 8) | Con zoom digital (2×, 10× o pellizcando) toma 6 fotos: el pulso de la mano las desplaza fracciones de píxel; se alinean, se combinan y se enfoca más que una sola toma (+1.7 dB de detalle medido). Automático en modo IA. |
 | **Exposición larga** (fase 8) | Botón de tipo de toma → **Larga**: 10 tomas alineadas y promediadas en luz lineal. El agua se vuelve seda, la gente que pasa desaparece y los faros dejan **estelas continuas**. Toca el disparador para terminar antes. |
 | **Astrofotografía** (fase 8) | Con el teléfono apoyado de noche (o con **Astro**): ~30 s de tomas de varios segundos con enfoque al infinito. El cielo se alinea con las **estrellas** (giro de la Tierra), el paisaje se combina fijo, se eliminan los píxeles calientes y se oscurece el fondo del cielo. Toca el disparador para terminar antes. |
+| **Mejorar con IA** (fase 9) | En el visor, botón **Mejorar**: **enderezar** (mide la inclinación con las líneas rectas de la foto), **perspectiva** (edificios que "se caen hacia atrás" por el punto de fuga), retoque por **zonas** (cielo más profundo, piel bien expuesta sin suavizar, vegetación con color), brillo y calidez. Vista previa al instante; mantén pulsada la foto para ver la original. Siempre se edita desde la original y se puede **restaurar**. Opcional: retoque por zonas automático en cada foto. |
+| **Calificación** (fase 9) | Cada foto recibe una nota de 0 a 100 (nitidez, exposición, ruido, horizonte, ojos abiertos y caras cortadas) con un consejo concreto para cada punto que resta. |
+| **Tu estilo** (fase 9) | La IA aprende de tus correcciones: exposición por tipo de escena (cuando compensas en PRO o aclaras en «Mejorar»), calidez, desenfoque de retrato y retoque favoritos. Necesita varias muestras, tiene tope (±0.7 EV), se ve en Ajustes › Tu estilo y se puede olvidar. Nunca sale del teléfono. |
 | **RAW (DNG)** | Guarda el archivo en bruto del sensor junto al JPG, si el lente lo permite (se activa en Ajustes). |
 
 Las fotos se guardan en **Imágenes › IA Camara**.
@@ -67,7 +70,7 @@ Paleta negro tinta con paneles de vidrio. El ámbar marca la acción y los valor
 6. ✅ El momento perfecto: modo Acción (sin retardo + instantes previos), mejor toma (nítida, ojos abiertos, sonrisa), corrección de parpadeos en grupo y disparo automático por sonrisa, mirada o mano levantada
 7. ✅ Modo retrato (recorte con IA, borde refinado, profundidad aproximada y bokeh óptico) y visor de fotos con desenfoque ajustable
 8. ✅ Súper resolución, modo noche v2 (tono local), exposición larga simulada y astrofotografía
-9. ⏳ Ajustes por zonas, enderezado automático, calificación de la foto y aprender tu gusto
+9. ✅ Retoque por zonas, enderezado y perspectiva automáticos, calificación de la foto y aprender tu estilo
 
 ## Desarrollo
 

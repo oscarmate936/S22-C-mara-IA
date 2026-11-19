@@ -45,7 +45,8 @@ object PhotoSaver {
     }
 
     /** Escribe (o reescribe) la imagen en una foto existente de la galería, con sus datos EXIF. */
-    fun write(context: Context, uri: Uri, bmp: Bitmap, exifSource: ByteArray?, rotationDegrees: Int, software: String): Boolean {
+    /** @param forceOrientation orientación EXIF a escribir (p. ej. NORMAL si la imagen ya va derecha), o null. */
+    fun write(context: Context, uri: Uri, bmp: Bitmap, exifSource: ByteArray?, rotationDegrees: Int, software: String, forceOrientation: Int? = null): Boolean {
         val resolver = context.contentResolver
         return try {
             resolver.openOutputStream(uri, "wt")?.use { bmp.compress(Bitmap.CompressFormat.JPEG, 95, it) } ?: return false
@@ -57,7 +58,7 @@ object PhotoSaver {
                     for (tag in COPY_TAGS) src.getAttribute(tag)?.let { dst.setAttribute(tag, it) }
                     srcOrientation = src.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED)
                 }
-                val orientation = if (srcOrientation > ExifInterface.ORIENTATION_NORMAL) srcOrientation else when (rotationDegrees) {
+                val orientation = forceOrientation ?: if (srcOrientation > ExifInterface.ORIENTATION_NORMAL) srcOrientation else when (rotationDegrees) {
                     90 -> ExifInterface.ORIENTATION_ROTATE_90
                     180 -> ExifInterface.ORIENTATION_ROTATE_180
                     270 -> ExifInterface.ORIENTATION_ROTATE_270

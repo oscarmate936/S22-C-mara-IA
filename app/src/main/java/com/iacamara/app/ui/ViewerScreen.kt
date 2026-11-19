@@ -45,7 +45,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GridView
@@ -78,6 +82,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.iacamara.app.ai.PhotoScore
+import com.iacamara.app.processing.Editor
 import com.iacamara.app.processing.PortraitProcessor
 import com.iacamara.app.processing.PortraitStore
 import com.iacamara.app.ui.theme.Palette
@@ -147,6 +153,7 @@ fun ViewerScreen(
     photosOverride: List<GalleryPhoto>? = null,
     bitmapOverride: ((Uri) -> Bitmap?)? = null,
     portraitOverride: ((Uri) -> Float?)? = null,
+    scoreOverride: ((Uri) -> PhotoScore.Result?)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -158,7 +165,11 @@ fun ViewerScreen(
     val versions = remember { mutableStateMapOf<Uri, Int>() }
     var grid by remember { mutableStateOf(false) }
     var chrome by remember { mutableStateOf(true) }
-    BackHandler { if (grid) grid = false else onClose() }
+    // Calificación de cada foto (se calcula al verla) y foto en edición.
+    val scores = remember { mutableStateMapOf<Uri, PhotoScore.Result>() }
+    var showScore by remember { mutableStateOf<PhotoScore.Result?>(null) }
+    var editing by remember { mutableStateOf<Uri?>(null) }
+    BackHandler { if (showScore != null) showScore = null else if (grid) grid = false else onClose() }
 
     val deleteLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
         if (it.resultCode == Activity.RESULT_OK) reload++
@@ -203,6 +214,19 @@ fun ViewerScreen(
                     }
                 }
                 val current = list.getOrNull(pager.currentPage.coerceIn(0, list.size - 1))
+                LaunchedEffect(current?.uri, current?.let { versions[it.uri] }) {
+                    val u = current?.uri ?: return@LaunchedEffect
+                    if (scores[u] != null && versions[u] == null) return@LaunchedEffect
+                    val r = scoreOverride?.invoke(u) ?: withContext(Dispatchers.Default) {
+                        runCatching {
+                            val bytes = context.contentResolver.openInputStream(u)?.use { it.readBytes() } ?: return@runCatching null
+                            val b = Editor.decodeUpright(bytes, 1024) ?: return@runCatching null
+                            val px = IntArray(b.width * b.height).also { b.getPixels(it, 0, b.width, 0, 0, b.width, b.height) }
+                            PhotoScore.score(PhotoScore.measure(px, b.width, b.height, Editor.faces(b)))
+                        }.getOrNull()
+                    }
+                    if (r != null) scores[u] = r
+                }
                 // Barra superior
                 AnimatedVisibility(chrome || grid, Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
                     Row(
@@ -217,6 +241,10 @@ fun ViewerScreen(
                                 Text(SimpleDateFormat("d MMM yyyy · HH:mm", Locale("es")).format(Date(current.dateMs)), style = Type.BodyStrong, color = Palette.Paper)
                                 Text("${pager.currentPage + 1} de ${list.size}", style = Type.ReadoutSmall, color = Palette.Mist)
                             }
+                        }
+                        if (!grid) current?.let { scores[it.uri] }?.let { sc ->
+                            ScoreChip(sc) { showScore = sc }
+                            Spacer(Modifier.width(8.dp))
                         }
                         if (!grid) current?.let { Gallery.badge(it.name) }?.let { b ->
                             Text(b, style = Type.Label, color = Palette.Amber, modifier = Modifier.clip(RoundedCornerShape(50))
@@ -242,6 +270,7 @@ fun ViewerScreen(
                                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 runCatching { context.startActivity(Intent.createChooser(send, "Compartir foto")) }
                             }
+                            ViewerAction(Icons.Rounded.AutoFixHigh, "Mejorar", tint = Palette.Amber) { editing = current.uri }
                             ViewerAction(Icons.Rounded.Edit, "Editar") {
                                 val edit = Intent(Intent.ACTION_EDIT).setDataAndType(current.uri, "image/jpeg")
                                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
@@ -250,7 +279,7 @@ fun ViewerScreen(
                             ViewerAction(Icons.Rounded.DeleteOutline, "Borrar", tint = Palette.Signal) {
                                 val uri = current.uri
                                 try {
-                                    if (context.contentResolver.delete(uri, null, null) > 0) { PortraitStore(context).remove(uri); reload++ }
+                                    if (context.contentResolver.delete(uri, null, null) > 0) { PortraitStore(context).remove(uri); scores.remove(uri); reload++ }
                                 } catch (e: SecurityException) {
                                     // Foto que ya no es "nuestra" (p. ej. tras reinstalar): Android pide confirmación.
                                     val sender = when {
@@ -265,6 +294,15 @@ fun ViewerScreen(
                     }
                 }
             }
+        }
+        // Detalle de la calificación
+        showScore?.let { sc -> ScoreSheet(sc) { showScore = null } }
+        // Editor «Mejorar con IA»
+        editing?.let { u ->
+            EditorScreen(u, onClose = { saved ->
+                editing = null
+                if (saved) { versions[u] = (versions[u] ?: 0) + 1; onChanged(u) }
+            })
         }
     }
 }
@@ -324,7 +362,10 @@ private fun PortraitPanel(uri: Uri, initial: Float, onDone: () -> Unit) {
         scope.launch {
             val ok = withContext(Dispatchers.Default) { runCatching { PortraitStore.rerender(context, uri, v) }.getOrDefault(false) }
             busy = false
-            if (ok) { applied = v; onDone() } else failed = true
+            if (ok) {
+                applied = v; onDone()
+                if (v >= 0.02f) com.iacamara.app.ai.TasteStore(context).update { recordPortrait(v) } // tu estilo
+            } else failed = true
         }
     }
     Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
@@ -385,5 +426,61 @@ private fun ViewerAction(icon: ImageVector, label: String, tint: Color = Palette
         Icon(icon, label, tint = tint, modifier = Modifier.size(24.dp))
         Spacer(Modifier.height(4.dp))
         Text(label, style = Type.Label, color = Palette.Mist)
+    }
+}
+
+/** Nota de la foto (0–100) con su color. */
+@Composable
+private fun ScoreChip(r: PhotoScore.Result, onClick: () -> Unit) {
+    val c = scoreColor(r.score)
+    Row(
+        Modifier.clip(RoundedCornerShape(50)).background(c.copy(alpha = 0.16f)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Star, null, tint = c, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("${r.score}", style = Type.Readout, color = c)
+    }
+}
+
+private fun scoreColor(s: Int) = when {
+    s >= 85 -> Palette.Level
+    s >= 70 -> Palette.Cyan
+    s >= 50 -> Palette.Amber
+    else -> Palette.Signal
+}
+
+/** Por qué esa nota: cada aspecto con un consejo. */
+@Composable
+private fun ScoreSheet(r: PhotoScore.Result, onDismiss: () -> Unit) {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onDismiss), contentAlignment = Alignment.BottomCenter) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).background(Palette.Graphite)
+                .clickable(enabled = false) {}.navigationBarsPadding().padding(20.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${r.score}", style = Type.Display, color = scoreColor(r.score))
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(r.label, style = Type.Title, color = Palette.Paper)
+                    Text("Calificación de la IA", style = Type.Body, color = Palette.Mist)
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            for (f in r.factors) {
+                Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.Top) {
+                    Icon(
+                        if (f.ok) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline, null,
+                        tint = if (f.ok) Palette.Level else Palette.Amber, modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(f.name.uppercase(), style = Type.Label, color = Palette.Mist)
+                        Text(f.detail, style = Type.Body, color = Palette.Paper)
+                    }
+                    if (f.penalty > 0) Text("−${f.penalty}", style = Type.ReadoutSmall, color = Palette.Fog)
+                }
+            }
+        }
     }
 }

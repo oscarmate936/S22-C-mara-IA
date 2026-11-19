@@ -60,8 +60,26 @@ class ScreenshotTest {
             GalleryPhoto(android.net.Uri.parse("content://demo/2"), "IACAM_20261119_181000_NOCHE.jpg", 1795630200000L),
         )
         rule.activity.actionBar?.hide()
-        rule.setContent { IACamaraTheme { ViewerScreen({}, photosOverride = photos, bitmapOverride = { photo }, portraitOverride = { 0.6f }) } }
+        val score = com.iacamara.app.ai.PhotoScore.score(com.iacamara.app.ai.PhotoMetrics(0.45f, 1f, 0f, 0f, 0.45f, 2.4f))
+        rule.setContent { IACamaraTheme { ViewerScreen({}, photosOverride = photos, bitmapOverride = { photo }, portraitOverride = { 0.6f }, scoreOverride = { score }) } }
         rule.mainClock.advanceTimeBy(800)
         rule.waitForIdle(); save("5_visor_retrato")
+    }
+
+    @Test fun editor() {
+        val src = android.graphics.BitmapFactory.decodeStream(javaClass.classLoader!!.getResourceAsStream("sim/rocket.jpg"))!!
+        val bmp = android.graphics.Bitmap.createScaledBitmap(src, 640, 480, true)
+        val w = bmp.width; val h = bmp.height
+        val px = IntArray(w * h).also { bmp.getPixels(it, 0, w, 0, 0, w, h) }
+        val tilted = com.iacamara.app.processing.Straighten.apply(px, w, h, 3f, 0f)
+        val tb = android.graphics.Bitmap.createBitmap(tilted, w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val analysis = com.iacamara.app.ui.EditAnalysis(
+            tb, tilted, com.iacamara.app.processing.Straighten.estimate(com.iacamara.app.processing.Align.luma(tilted), w, h),
+            com.iacamara.app.processing.ZoneMasks.compute(tilted, w, h), emptyList(), true,
+        )
+        rule.activity.actionBar?.hide()
+        rule.setContent { IACamaraTheme { com.iacamara.app.ui.EditorScreen(android.net.Uri.parse("content://demo/9"), { }, analysisOverride = analysis) } }
+        rule.mainClock.advanceTimeBy(1500)
+        rule.waitForIdle(); save("6_mejorar_con_ia")
     }
 }

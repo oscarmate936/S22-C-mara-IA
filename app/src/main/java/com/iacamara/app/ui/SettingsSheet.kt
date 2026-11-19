@@ -20,7 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Camera
+import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Portrait
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Psychology
@@ -40,6 +42,12 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.iacamara.app.ai.TasteStore
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -113,11 +121,39 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
             Card {
                 ToggleRow(Icons.Rounded.AutoAwesomeMotion, "Tomas múltiples automáticas", "Con poca luz combina hasta 8 fotos (menos ruido) y aclara las sombras por zonas; con el teléfono apoyado de noche hace astrofotografía; con zoom digital, súper resolución; en macro varias distancias de enfoque y con mascotas, movimiento o grupos elige el mejor momento.", prefs.multiShot, prefs::updateMultiShot)
                 Divider()
+                ToggleRow(Icons.Rounded.AutoFixHigh, "Retoque automático por zonas", "Cada foto recibe un retoque natural: cielo más profundo, piel bien expuesta y vegetación con color, con tu estilo. Siempre puedes restaurar la original desde «Mejorar».", prefs.autoRetouch, prefs::updateAutoRetouch)
+                Divider()
                 ToggleRow(Icons.Rounded.Portrait, "Retrato automático", "En modo IA, cuando hay una persona cerca, recorta al sujeto y desenfoca el fondo. Desde la galería de la app puedes cambiar el desenfoque o quitarlo.", prefs.autoPortrait, prefs::updateAutoPortrait)
                 Divider()
                 ToggleRow(Icons.Rounded.RawOn, "Guardar RAW (DNG)", "Guarda también el archivo en bruto del sensor para editarlo en Lightroom o Snapseed. Con RAW activo, cada foto es de una sola toma.", prefs.raw, prefs::updateRaw)
             }
 
+            Section("TU ESTILO")
+            Card {
+                val context = LocalContext.current
+                val taste = remember { TasteStore(context) }
+                var learn by remember { mutableStateOf(taste.enabled) }
+                var summary by remember { mutableStateOf(taste.summary()) }
+                ToggleRow(Icons.Rounded.School, "Aprender mi estilo", "La IA observa tus correcciones (exposición en PRO, «Mejorar», desenfoque de retratos) y las adopta poco a poco, por tipo de escena. Todo se queda en tu teléfono.", learn) {
+                    learn = it; taste.enabled = it
+                }
+                Divider()
+                if (summary.isEmpty()) {
+                    Text("Aún no conozco tu estilo. Corrige la exposición en PRO o ajusta tus fotos con «Mejorar» y lo iré aprendiendo.", style = Type.Body, color = Palette.Mist, modifier = Modifier.padding(vertical = 6.dp))
+                } else {
+                    for (line in summary) Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).clip(CircleShape).background(Palette.Cyan))
+                        Spacer(Modifier.width(10.dp))
+                        Text(line, style = Type.Body, color = Palette.Paper)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Olvidar mi estilo", style = Type.LabelLarge, color = Palette.Signal,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, Palette.Signal.copy(alpha = 0.5f), RoundedCornerShape(50))
+                            .clickable { taste.forget(); summary = emptyList() }.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
             Section("COMPOSICIÓN")
             Card {
                 Text("Guías", style = Type.BodyStrong, color = Palette.Paper)
@@ -160,7 +196,7 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text("IA Cámara ${BuildConfigInfo.VERSION}", style = Type.BodyStrong, color = Palette.Paper)
-                        Text("Fase 8 · Noche, astro y súper resolución", style = Type.Body, color = Palette.Mist)
+                        Text("Fase 9 · Edición con IA y tu estilo", style = Type.Body, color = Palette.Mist)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -172,7 +208,7 @@ fun SettingsSheet(prefs: Prefs, onDismiss: () -> Unit) {
                 Roadmap("6", "Momento perfecto y disparo automático", done = true)
                 Roadmap("7", "Modo retrato y visor de fotos", done = true)
                 Roadmap("8", "Súper resolución, noche v2, exposición larga y astro", done = true)
-                Roadmap("9", "Ajustes por zonas, enderezado y calificación", done = false)
+                Roadmap("9", "Retoque por zonas, enderezado, calificación y tu estilo", done = true)
             }
         }
     }

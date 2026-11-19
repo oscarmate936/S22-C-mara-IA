@@ -25,6 +25,9 @@ import com.iacamara.app.processing.BurstKind
 import com.iacamara.app.processing.BurstProcessor
 import com.iacamara.app.processing.MomentProcessor
 import com.iacamara.app.processing.PortraitProcessor
+import com.iacamara.app.processing.Editor
+import com.iacamara.app.ai.TasteCore
+import com.iacamara.app.ai.TasteStore
 import com.iacamara.app.ai.SceneBrain
 import com.iacamara.app.ai.SceneDetector
 import com.iacamara.app.ai.SceneResult
@@ -141,6 +144,19 @@ class CameraEngine(private val context: Context) {
     var lastPhoto by mutableStateOf<Bitmap?>(null)
         private set
 
+    /** Escena en el momento del disparo (para recordar con qué escena se tomó cada foto). */
+    private var sceneAtCapture: String? = null
+
+    /** Después de guardar: recordar la escena (para aprender tu estilo) y, si está activo, el retoque por zonas. */
+    private fun onPhotoSaved(uri: Uri) {
+        val sc = sceneAtCapture
+        val retouch = autoRetouch
+        processingExecutor.execute {
+            uri.lastPathSegment?.let { id -> if (sc != null) taste.rememberScene(id, sc) }
+            if (retouch && runCatching { Editor.autoRetouch(context, uri, taste.core, sc ?: TasteCore.ALL) }.getOrDefault(false)) refreshThumbnail(uri)
+        }
+    }
+
     /** Vuelve a leer la miniatura de la última foto (p. ej. tras cambiar el desenfoque de un retrato). */
     fun refreshThumbnail(uri: Uri) {
         if (uri != lastPhotoUri) return
@@ -171,6 +187,9 @@ class CameraEngine(private val context: Context) {
     var multiShotAuto: Boolean = true
     /** En modo IA, los retratos (una persona cerca) salen con el fondo desenfocado. */
     var autoPortrait: Boolean = true
+    /** Retoque natural por zonas (cielo, piel, vegetación) en cada foto. */
+    var autoRetouch: Boolean = false
+    val taste = TasteStore(context)
     /** Progreso de una toma múltiple ("Tomando 3/8"…), null si no hay. */
     var burstStatus by mutableStateOf<String?>(null)
         private set
@@ -878,13 +897,17 @@ class CameraEngine(private val context: Context) {
             // Cambio de velocidad: el ISO compensa en el mismo instante (sin "bombeo" de brillo).
             priorityIso = ExposureMath.keepExposure(priorityIso, engagedBefore, shutter, isoMin, isoMax)
         }
-        val changed = abs(d.ev - brainEv) > 0.05f || d.wb != brainWb || shutter != brainShutterNs
-        brainEv = d.ev
+        // Tu estilo: lo que has corregido antes en este tipo de escena (aprendido, con tope).
+        val bias = if (taste.enabled) taste.core.evBias(scene?.scene?.name ?: TasteCore.ALL) else 0f
+        val evTarget = (d.ev + bias).coerceIn(caps.evValues.firstOrNull() ?: -2f, caps.evValues.lastOrNull() ?: 2f)
+        val changed = abs(evTarget - brainEv) > 0.05f || d.wb != brainWb || shutter != brainShutterNs
+        brainEv = evTarget
         brainWb = d.wb
         brainShutterNs = shutter
         brainReasons = if (flashReady && d.shutterNs != null) {
             listOf(Reason("Flash", "la cámara mide la luz junto con el flash")) + d.reasons.filterNot { it.value == ExposureMath.formatShutter(d.shutterNs) }
         } else d.reasons
+        if (abs(bias) >= 0.1f) brainReasons = brainReasons.take(2) + Reason("%+.1f EV".format(bias), "tu estilo (lo aprendí de tus correcciones)")
         lastLensDecision = d.lensFactor
         if (changed) applyControls()
     }
@@ -1059,7 +1082,7 @@ class CameraEngine(private val context: Context) {
             override fun onImageSaved(result: ImageCapture.OutputFileResults) {
                 val uri = result.savedUri
                 if (uri != null && context.contentResolver.getType(uri)?.contains("jpeg") == true) {
-                    lastPhotoUri = uri
+                    lastPhotoUri = uri; onPhotoSaved(uri)
                     analysisExecutor.execute {
                         val thumb = runCatching { context.contentResolver.loadThumbnail(uri, Size(240, 240), null) }.getOrNull()
                         mainHandler.post { if (thumb != null) lastPhoto = thumb }
@@ -1111,6 +1134,12 @@ class CameraEngine(private val context: Context) {
             return
         }
         isCapturing = true
+        // Tu estilo: en PRO, si solo compensas la exposición, es una preferencia clara de brillo.
+        if (taste.enabled && mode == CaptureMode.PRO && manualIso == null && manualShutterNs == null && abs(evCompensation) >= 0.1f) {
+            val sc = scene?.scene?.name
+            if (sc != null) taste.update { recordExposure(sc, evCompensation) }
+        }
+        sceneAtCapture = scene?.scene?.name
         val flashNow = wantsFlash()
         ic.flashMode = ImageCapture.FLASH_MODE_OFF
         val burst = if (flashNow) null else burstPlan()
@@ -1289,13 +1318,13 @@ class CameraEngine(private val context: Context) {
             if (kind == BurstKind.PORTRAIT) {
                 processingExecutor.execute {
                     val res = runCatching {
-                        PortraitProcessor(context).process(frames.first(), rotation) { msg -> mainHandler.post { burstStatus = msg } }
+                        PortraitProcessor(context).process(frames.first(), rotation, (if (taste.enabled) taste.core.portraitStrength(PortraitProcessor.DEFAULT_STRENGTH) else PortraitProcessor.DEFAULT_STRENGTH)) { msg -> mainHandler.post { burstStatus = msg } }
                     }.onFailure { Log.e(TAG, "Fallo en el retrato", it) }.getOrNull()
                     val uri = res?.uri
                     val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
                     mainHandler.post {
                         if (uri != null) {
-                            lastPhotoUri = uri
+                            lastPhotoUri = uri; onPhotoSaved(uri)
                             thumb?.let { lastPhoto = it }
                             captureCount++
                             momentNotice = if (res.subjectFound) "RETRATO · AJUSTA EL DESENFOQUE EN LA GALERÍA" else "SIN SUJETO CLARO · FOTO NORMAL"
@@ -1314,7 +1343,7 @@ class CameraEngine(private val context: Context) {
                     val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
                     mainHandler.post {
                         if (uri != null) {
-                            lastPhotoUri = uri
+                            lastPhotoUri = uri; onPhotoSaved(uri)
                             thumb?.let { lastPhoto = it }
                             captureCount++
                             momentNotice = "MEJOR DE ${res.candidates}" +
@@ -1338,7 +1367,7 @@ class CameraEngine(private val context: Context) {
                 val thumb = uri?.let { runCatching { context.contentResolver.loadThumbnail(it, Size(240, 240), null) }.getOrNull() }
                 mainHandler.post {
                     if (uri != null) {
-                        lastPhotoUri = uri
+                        lastPhotoUri = uri; onPhotoSaved(uri)
                         thumb?.let { lastPhoto = it }
                         captureCount++
                     } else errorMessage = "No se pudo combinar la foto"
@@ -1405,7 +1434,7 @@ class CameraEngine(private val context: Context) {
                 endCapture()
                 captureCount++
                 result.savedUri?.let { uri ->
-                    lastPhotoUri = uri
+                    lastPhotoUri = uri; onPhotoSaved(uri)
                     analysisExecutor.execute {
                         val thumb = runCatching { context.contentResolver.loadThumbnail(uri, Size(240, 240), null) }.getOrNull()
                         mainHandler.post { if (thumb != null) lastPhoto = thumb }
